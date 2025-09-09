@@ -114,10 +114,10 @@ export class BotHandlers {
 
       if (searches.length > 0) {
         statusText += `\n\n📋 Vos critères de recherche:`;
-        searches.forEach((search, index) => {
-          statusText += `\n\n${index + 1}. Mots-clés: ${search.keywords.join(', ')}`;
-          statusText += `\n   Lieux: ${search.locations.join(', ')}`;
-          statusText += `\n   Statut: ${search.active ? '✅ Actif' : '⏸️ Suspendu'}`;
+        searches.forEach((search) => {
+          statusText += `\n\nMots-clés: ${search.keywords.join(', ')}`;
+          statusText += `\n  Lieux: ${search.locations.join(', ')}`;
+          statusText += `\n  Statut: ${search.active ? '✅ Actif' : '⏸️ Suspendu'}`;
         });
       } else {
         statusText += '\n\n⚠️ Aucun critère configuré. Utilisez /config';
