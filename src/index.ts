@@ -2,7 +2,7 @@ import { TelegramBot } from './bot/index.js';
 import { JobScraperService } from './services/jobScraper.js';
 import { AlertEngine } from './services/alertEngine.js';
 import { SchedulerService } from './services/scheduler.js';
-import { startHealthServer } from './utils/health.js';
+import { startAdminServer } from './admin/server.js';
 import { env } from './config/env.js';
 
 class SwissJobBot {
@@ -43,8 +43,8 @@ class SwissJobBot {
     try {
       console.log('🇨🇭 Starting SwizJobs Bot...');
 
-      // Start health server
-      startHealthServer(env.PORT, this.alertEngine);
+      // Start admin server
+      startAdminServer(env.PORT, this.alertEngine, this.scheduler);
 
       // Start Telegram bot
       await this.telegramBot.start();

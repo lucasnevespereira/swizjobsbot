@@ -1,4 +1,5 @@
 import * as cron from 'node-cron';
+import { Cron } from 'croner';
 import { AlertEngine } from './alertEngine.js';
 import { env } from '../config/env.js';
 
@@ -14,13 +15,36 @@ export class SchedulerService {
     console.log('⏰ Starting scheduler service...');
     console.log(`📅 [Scheduler] Using cron pattern: ${env.SCHEDULER_CRON}`);
 
+    // Validate and show next run time
+    try {
+      const nextRun = new Cron(env.SCHEDULER_CRON, { timezone: 'Europe/Zurich' });
+      const nextRunTime = nextRun.nextRun();
+      if (nextRunTime) {
+        console.log(`🕒 [Scheduler] Next job alert run scheduled for: ${nextRunTime.toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' })}`);
+        console.log(`⏰ [Scheduler] Current time (CET): ${new Date().toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' })}`);
+      }
+      nextRun.stop(); // Stop the test cron
+    } catch (error) {
+      console.error(`❌ [Scheduler] Invalid cron pattern: ${env.SCHEDULER_CRON}`, error);
+    }
+
     // Main job alert processing
     const alertTask = cron.schedule(env.SCHEDULER_CRON, async () => {
       const scheduledTime = new Date();
       console.log(`⏰ [${scheduledTime.toISOString()}] SCHEDULED JOB PROCESSING STARTED`);
+      console.log(`🕒 [Scheduler] Local time: ${scheduledTime.toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' })}`);
+
       try {
         await this.alertEngine.processAllAlerts();
         console.log(`✅ [${new Date().toISOString()}] SCHEDULED JOB PROCESSING COMPLETED SUCCESSFULLY`);
+
+        // Show next run time after completion
+        const nextRun = new Cron(env.SCHEDULER_CRON, { timezone: 'Europe/Zurich' });
+        const nextRunTime = nextRun.nextRun();
+        if (nextRunTime) {
+          console.log(`🕒 [Scheduler] Next job alert run: ${nextRunTime.toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' })}`);
+        }
+        nextRun.stop();
       } catch (error) {
         console.error(`❌ [${new Date().toISOString()}] SCHEDULED JOB PROCESSING FAILED:`, error);
       }
@@ -105,5 +129,25 @@ export class SchedulerService {
       status[name] = true;
     });
     return status;
+  }
+
+  getNextRunTime(): { nextRun: string | null, currentTime: string, cronPattern: string } {
+    try {
+      const cronJob = new Cron(env.SCHEDULER_CRON, { timezone: 'Europe/Zurich' });
+      const nextRunTime = cronJob.nextRun();
+      cronJob.stop();
+
+      return {
+        nextRun: nextRunTime ? nextRunTime.toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' }) : null,
+        currentTime: new Date().toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' }),
+        cronPattern: env.SCHEDULER_CRON
+      };
+    } catch (error) {
+      return {
+        nextRun: null,
+        currentTime: new Date().toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' }),
+        cronPattern: env.SCHEDULER_CRON + ' (INVALID)'
+      };
+    }
   }
 }

@@ -4,8 +4,9 @@ import { users } from '../database/schema.js';
 import { eq } from 'drizzle-orm';
 import { JobMatch } from '../types/index.js';
 import { AlertEngine } from '../services/alertEngine.js';
+import { SchedulerService } from '../services/scheduler.js';
 
-export function startHealthServer(port: number, alertEngine: AlertEngine): void {
+export function startAdminServer(port: number, alertEngine: AlertEngine, scheduler?: SchedulerService): void {
   const app = express();
   app.use(express.json());
 
@@ -152,10 +153,33 @@ export function startHealthServer(port: number, alertEngine: AlertEngine): void 
     }
   });
 
+  // Admin scheduler status endpoint
+  app.get('/admin/scheduler', (req, res) => {
+    if (!scheduler) {
+      return res.status(500).json({
+        error: 'Scheduler not available'
+      });
+    }
+
+    const nextRunInfo = scheduler.getNextRunTime();
+    const taskStatus = scheduler.getTaskStatus();
+
+    return res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      scheduler: {
+        ...nextRunInfo,
+        tasks: taskStatus
+      }
+    });
+  });
+
   app.listen(port, () => {
-    console.log(`🏥 Health check server listening on port ${port}`);
-    console.log(`🔧 Admin endpoints:`);
-    console.log(`   - POST /admin/test-scraper`);
-    console.log(`   - POST /admin/trigger`);
+    console.log(`🔧 Admin server listening on port ${port}`);
+    console.log(`📋 Available endpoints:`);
+    console.log(`   - GET /health (Health check)`);
+    console.log(`   - POST /admin/test-scraper (Test job scraping)`);
+    console.log(`   - POST /admin/trigger (Trigger user alerts)`);
+    console.log(`   - GET /admin/scheduler (Scheduler status)`);
   });
 }
