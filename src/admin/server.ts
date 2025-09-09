@@ -175,7 +175,7 @@ export function startAdminServer(port: number, alertEngine: AlertEngine, schedul
   });
 
   // Manual scheduler trigger - acts as external cron
-  app.post('/admin/process-all-alerts', async (req, res) => {
+  app.get('/admin/process-all-alerts', async (req, res) => {
     const startTime = new Date();
     console.log(`🔄 [${startTime.toISOString()}] MANUAL ALERT PROCESSING STARTED (triggered via API)`);
     try {
@@ -220,6 +220,6 @@ export function startAdminServer(port: number, alertEngine: AlertEngine, schedul
     console.log(`   - POST /admin/test-scraper (Test job scraping)`);
     console.log(`   - POST /admin/trigger (Trigger user alerts)`);
     console.log(`   - GET /admin/scheduler (Scheduler status)`);
-    console.log(`   - POST /admin/process-all-alerts (Manual job processing)`);
+    console.log(`   - GET /admin/process-all-alerts (Manual job processing)`);
   });
 }
