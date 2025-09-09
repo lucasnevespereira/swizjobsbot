@@ -1,4 +1,4 @@
-# Swiz Jobs Bot - Swiss Job Alert Bot
+# SwizJobs Bot - Swiss Job Alert Bot
 
 A Telegram bot that monitors job postings in Switzerland and sends personalized alerts to users. Built for French-speaking users with family-friendly interface.
 
@@ -167,4 +167,4 @@ For issues and feature requests, please create an issue in the GitHub repository
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License - see [LICENSE](LICENSE) file for details.
