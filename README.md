@@ -1,16 +1,32 @@
-# SwizJobs Bot - Swiss Job Alert Bot
-
-A Telegram bot that monitors job postings in Switzerland and sends personalized alerts to users. Built for French-speaking users with family-friendly interface.
+<div align="center">
+  <img src="assets/logo.png" alt="SwizJobs Bot Logo" width="120" height="120">
+  
+  # SwizJobs Bot - Swiss Job Alert Bot
+  
+  A Telegram bot that monitors job postings in Switzerland and sends personalized alerts to users. Built for French-speaking users with family-friendly interface.
+</div>
 
 ## Features
 
 - 🤖 **Telegram Bot Interface** - Fully French language support
-- 🔍 **Multi-source Job Scraping** - jobup.ch (via Apify) + Google Jobs (via SerpApi)
+- 🔍 **Google Jobs Integration** - Comprehensive job aggregation via SerpApi
 - 🎯 **Smart Filtering** - Keywords, locations, and date-based filtering
 - 📱 **Real-time Notifications** - Instant job alerts via Telegram
 - ⏰ **Automated Scheduling** - Background processing every 2 hours
 - 🗄️ **PostgreSQL Database** - Reliable data storage with Drizzle ORM
 - 🐳 **Docker Ready** - Easy deployment with Docker Compose
+
+## Job Sources
+
+Google Jobs aggregates listings from multiple Swiss job boards including:
+- **Jobup.ch** - Switzerland's leading job portal
+- **Jobs.ch** - Largest Swiss job board
+- **Company Career Pages** - Direct company postings
+- **LinkedIn Jobs** - Professional network listings
+- **Indeed Switzerland** - Job aggregator
+- **Regional Job Boards** - Cantonal and specialized sites
+
+This approach provides broader coverage than individual scrapers while being cost-effective.
 
 ## User Commands
 
@@ -30,7 +46,6 @@ A Telegram bot that monitors job postings in Switzerland and sends personalized 
 - Node.js 20+ or Docker
 - PostgreSQL database
 - Telegram Bot Token ([create via @BotFather](https://t.me/botfather))
-- Apify API Token ([get here](https://apify.com/))
 - SerpApi Key ([get here](https://serpapi.com/))
 
 ### 2. Environment Setup
@@ -44,7 +59,6 @@ Required environment variables:
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token
 DATABASE_URL=postgresql://user:password@localhost:5432/swiss_job_bot
-APIFY_API_TOKEN=your_apify_token
 SERPAPI_API_KEY=your_serpapi_key
 ```
 
@@ -93,7 +107,7 @@ docker-compose logs -f swizjobs-bot
 ### Core Services
 
 1. **TelegramBot** - Handles user interactions and commands
-2. **JobScraperService** - Scrapes jobs from multiple sources
+2. **JobScraperService** - Scrapes jobs from Google Jobs (includes Jobup, Jobs.ch, and other Swiss job boards)
 3. **AlertEngine** - Matches jobs to user criteria and sends notifications
 4. **SchedulerService** - Manages automated background tasks
 
@@ -143,7 +157,7 @@ npm run build
 
 # Start with PM2
 npm install -g pm2
-pm2 start dist/index.js --name swizjobs_bot
+pm2 start dist/index.js --name swizjobs-bot
 pm2 save
 pm2 startup
 ```

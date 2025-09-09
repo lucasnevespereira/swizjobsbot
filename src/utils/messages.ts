@@ -63,7 +63,7 @@ Pour commencer, utilisez /register`,
 2. Configurez vos critères avec /config
 3. Recevez des alertes automatiques pour les nouveaux emplois
 
-📧 Support: Contactez @votre_username pour l'aide`
+📧 Support: Contactez @lucaasnp pour l'aide`
     },
 
     errors: {

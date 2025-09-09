@@ -19,7 +19,7 @@ db:
 # One-time setup for contributors
 setup: db
 	@echo "📦 Installing dependencies..."
-	@npm install --silent
+	@npm install
 	@echo "🔄 Setting up database schema (development)..."
 	@npm run db:push
 	@echo "✅ Setup complete!"
@@ -46,6 +46,14 @@ clean:
 	@echo "🧹 Cleaning up..."
 	@rm -rf dist node_modules
 	@docker-compose down -v
+
+lint:
+	@echo "🔍 Running linter..."
+	@npm run lint
+
+lint-fix:
+	@echo "🔧 Fixing linting issues..."
+	@npm run lint:fix
 
 down:
 	@echo "🛑 Stopping all services..."

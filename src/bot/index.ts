@@ -24,7 +24,7 @@ export class TelegramBot {
     this.bot.command('status', BotHandlers.handleStatus);
     this.bot.command('pause', BotHandlers.handlePause);
     this.bot.command('help', BotHandlers.handleHelp);
-    
+
     this.bot.on('text', BotHandlers.handleText);
   }
 
@@ -39,7 +39,7 @@ export class TelegramBot {
     try {
       await this.bot.launch();
       console.log('🤖 Telegram bot started successfully');
-      
+
       process.once('SIGINT', () => this.stop());
       process.once('SIGTERM', () => this.stop());
     } catch (error) {

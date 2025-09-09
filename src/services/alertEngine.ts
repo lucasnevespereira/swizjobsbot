@@ -1,6 +1,6 @@
 import { db } from '../database/connection.js';
 import { users, jobSearches, jobPostings, userNotifications } from '../database/schema.js';
-import { eq, and, notInArray, gte } from 'drizzle-orm';
+import { eq, and, notInArray } from 'drizzle-orm';
 import { JobMatch } from '../types/index.js';
 import { JobScraperService } from './jobScraper.js';
 import { TelegramBot } from '../bot/index.js';
@@ -15,7 +15,8 @@ export class AlertEngine {
   }
 
   async processAllAlerts(): Promise<void> {
-    console.log('🚀 Starting alert processing...');
+    const startTime = new Date();
+    console.log(`🚀 [${startTime.toISOString()}] Starting scheduled alert processing...`);
 
     try {
       const activeUsers = await db
@@ -23,21 +24,34 @@ export class AlertEngine {
         .from(users)
         .where(eq(users.active, true));
 
-      console.log(`👥 Processing alerts for ${activeUsers.length} active users`);
+      console.log(`👥 [Alert Engine] Found ${activeUsers.length} active users to process`);
+
+      let totalJobsFound = 0;
+      let totalNotificationsSent = 0;
 
       for (const user of activeUsers) {
-        await this.processUserAlerts(user);
+        const userStats = await this.processUserAlerts(user);
+        totalJobsFound += userStats.jobsFound;
+        totalNotificationsSent += userStats.notificationsSent;
         await this.sleep(1000); // Rate limiting
       }
 
-      console.log('✅ Alert processing completed');
+      const endTime = new Date();
+      const duration = endTime.getTime() - startTime.getTime();
+
+      console.log(`✅ [${endTime.toISOString()}] Alert processing completed:`);
+      console.log(`   📊 Duration: ${Math.round(duration / 1000)}s`);
+      console.log(`   👥 Users processed: ${activeUsers.length}`);
+      console.log(`   💼 Total jobs found: ${totalJobsFound}`);
+      console.log(`   📱 Notifications sent: ${totalNotificationsSent}`);
+
     } catch (error) {
-      console.error('❌ Error in alert processing:', error);
+      console.error(`❌ [${new Date().toISOString()}] Error in alert processing:`, error);
       throw error;
     }
   }
 
-  private async processUserAlerts(user: any): Promise<void> {
+  private async processUserAlerts(user: any): Promise<{jobsFound: number, notificationsSent: number}> {
     try {
       const userSearches = await db
         .select()
@@ -48,45 +62,74 @@ export class AlertEngine {
         ));
 
       if (userSearches.length === 0) {
-        console.log(`⚠️ No active searches for user ${user.telegramChatId}`);
-        return;
+        console.log(`⚠️  [User ${user.telegramChatId}] No active job searches configured`);
+        return { jobsFound: 0, notificationsSent: 0 };
       }
 
+      console.log(`🔍 [User ${user.telegramChatId}] Processing ${userSearches.length} job search(es)`);
+
+      let userJobsFound = 0;
+      let userNotificationsSent = 0;
+
       for (const search of userSearches) {
-        await this.processJobSearch(user, search);
+        const searchStats = await this.processJobSearch(user, search);
+        userJobsFound += searchStats.jobsFound;
+        userNotificationsSent += searchStats.notificationsSent;
       }
+
+      if (userNotificationsSent > 0) {
+        console.log(`📱 [User ${user.telegramChatId}] Sent ${userNotificationsSent} notifications`);
+      }
+
+      return { jobsFound: userJobsFound, notificationsSent: userNotificationsSent };
     } catch (error) {
-      console.error(`❌ Error processing alerts for user ${user.telegramChatId}:`, error);
+      console.error(`❌ [User ${user.telegramChatId}] Error processing alerts:`, error);
+      return { jobsFound: 0, notificationsSent: 0 };
     }
   }
 
-  private async processJobSearch(user: any, search: any): Promise<void> {
+  private async processJobSearch(user: any, search: any): Promise<{jobsFound: number, notificationsSent: number}> {
     try {
-      console.log(`🔍 Processing search for user ${user.telegramChatId}: ${search.keywords.join(', ')}`);
+      const searchCriteria = `"${search.keywords.join(', ')}" in [${search.locations.join(', ')}]`;
+      console.log(`🔍 [User ${user.telegramChatId}] Searching: ${searchCriteria}`);
 
+      const scrapeStart = Date.now();
       const jobs = await this.jobScraper.scrapeAllSources(search.keywords, search.locations);
-      
+      const scrapeDuration = Date.now() - scrapeStart;
+
+      console.log(`📊 [User ${user.telegramChatId}] Scraping completed in ${Math.round(scrapeDuration/1000)}s - Found ${jobs.length} total jobs`);
+
       const newJobs = await this.filterNewJobs(jobs, search.maxAgeDays);
-      
+      console.log(`📅 [User ${user.telegramChatId}] ${newJobs.length} jobs within ${search.maxAgeDays} day(s)`);
+
       if (newJobs.length === 0) {
-        console.log(`📭 No new jobs found for user ${user.telegramChatId}`);
-        return;
+        console.log(`📭 [User ${user.telegramChatId}] No recent jobs found`);
+        return { jobsFound: 0, notificationsSent: 0 };
       }
 
       const unseenJobs = await this.filterUnseenJobs(newJobs, user.id);
-      
+      console.log(`👁️  [User ${user.telegramChatId}] ${unseenJobs.length} unseen jobs (${newJobs.length - unseenJobs.length} already seen)`);
+
       if (unseenJobs.length === 0) {
-        console.log(`👁️ No unseen jobs for user ${user.telegramChatId}`);
-        return;
+        console.log(`✅ [User ${user.telegramChatId}] All jobs already notified`);
+        return { jobsFound: newJobs.length, notificationsSent: 0 };
       }
 
       await this.saveNewJobs(unseenJobs);
       await this.sendJobAlerts(user.telegramChatId, unseenJobs);
       await this.recordNotifications(user.id, unseenJobs);
 
-      console.log(`📱 Sent ${unseenJobs.length} job alerts to user ${user.telegramChatId}`);
+      console.log(`🎯 [User ${user.telegramChatId}] Successfully sent ${unseenJobs.length} job alerts for criteria: ${searchCriteria}`);
+
+      // Log job details for debugging
+      unseenJobs.forEach((job, index) => {
+        console.log(`   ${index + 1}. "${job.title}" at ${job.company} (${job.location}) - ${job.source}`);
+      });
+
+      return { jobsFound: newJobs.length, notificationsSent: unseenJobs.length };
     } catch (error) {
-      console.error(`❌ Error processing job search:`, error);
+      console.error(`❌ [User ${user.telegramChatId}] Error processing job search for "${search.keywords.join(', ')}":`, error);
+      return { jobsFound: 0, notificationsSent: 0 };
     }
   }
 
@@ -112,16 +155,16 @@ export class AlertEngine {
       );
 
     const seenIds = new Set(seenJobIds.map(s => s.jobPostingId));
-    
+
     const unseenJobs: JobMatch[] = [];
-    
+
     for (const job of jobs) {
       const existingJob = await db
         .select()
         .from(jobPostings)
         .where(eq(jobPostings.externalId, job.id))
         .limit(1);
-      
+
       if (existingJob.length === 0 || !seenIds.has(existingJob[0]!.id)) {
         unseenJobs.push(job);
       }
@@ -171,14 +214,14 @@ export class AlertEngine {
 
   private formatJobMessage(job: JobMatch): string {
     const postedDate = job.postedDate.toLocaleDateString('fr-FR');
-    
+
     return `🔔 <b>Nouvelle offre d'emploi!</b>
 
 📋 <b>Titre:</b> ${job.title}
 🏢 <b>Entreprise:</b> ${job.company}
 📍 <b>Lieu:</b> ${job.location}
 📅 <b>Publié:</b> ${postedDate}
-🔗 <b>Postuler:</b> <a href="${job.url}">Voir l'offre</a>
+🔗 <a href="${job.url}">📋 Postuler maintenant</a>
 
 <i>Tapez /pause pour arrêter les alertes</i>`;
   }

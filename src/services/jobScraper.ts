@@ -1,55 +1,13 @@
-import { ApifyClient } from 'apify-client';
 import { getJson } from 'serpapi';
 import { JobMatch, ScrapingResult } from '../types/index.js';
 
 export class JobScraperService {
-  private apifyClient: ApifyClient;
   private serpApiKey: string;
 
-  constructor(apifyToken: string, serpApiKey: string) {
-    this.apifyClient = new ApifyClient({ token: apifyToken });
+  constructor(serpApiKey: string) {
     this.serpApiKey = serpApiKey;
   }
 
-  async scrapeJobsFromJobup(keywords: string[], locations: string[]): Promise<ScrapingResult> {
-    try {
-      const actorId = 'drobnikj/jobup-scraper';
-      
-      const input = {
-        queries: keywords.map(keyword => ({
-          keyword,
-          location: locations.join(','),
-          maxItems: 50
-        }))
-      };
-
-      const run = await this.apifyClient.actor(actorId).call(input);
-      const { items } = await this.apifyClient.dataset(run.defaultDatasetId).listItems();
-
-      const jobs: JobMatch[] = items.map((item: any) => ({
-        id: item.id || item.url,
-        title: item.title,
-        company: item.company,
-        location: item.location,
-        url: item.url,
-        description: item.description,
-        postedDate: new Date(item.posted || Date.now()),
-        source: 'jobup' as const
-      }));
-
-      return {
-        jobs,
-        success: true
-      };
-    } catch (error) {
-      console.error('Jobup scraping error:', error);
-      return {
-        jobs: [],
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-    }
-  }
 
   async scrapeJobsFromGoogle(keywords: string[], locations: string[]): Promise<ScrapingResult> {
     try {
@@ -58,7 +16,7 @@ export class JobScraperService {
       for (const keyword of keywords) {
         for (const location of locations) {
           const searchQuery = `${keyword} jobs in ${location} Switzerland`;
-          
+
           const response = await getJson({
             engine: "google_jobs",
             q: searchQuery,
@@ -99,32 +57,42 @@ export class JobScraperService {
   }
 
   async scrapeAllSources(keywords: string[], locations: string[]): Promise<JobMatch[]> {
-    console.log(`🔍 Scraping jobs for keywords: ${keywords.join(', ')} in locations: ${locations.join(', ')}`);
+    const searchId = `${keywords.join('+')}_${locations.join('+')}`.substring(0, 20);
+    const startTime = Date.now();
 
-    const [jobupResult, googleResult] = await Promise.all([
-      this.scrapeJobsFromJobup(keywords, locations),
-      this.scrapeJobsFromGoogle(keywords, locations)
-    ]);
+    console.log(`🔍 [Scraper ${searchId}] Starting Google Jobs scraping:`);
+    console.log(`   🎯 Keywords: [${keywords.join(', ')}]`);
+    console.log(`   📍 Locations: [${locations.join(', ')}]`);
+
+    const googleResult = await this.scrapeJobsFromGoogle(keywords, locations);
 
     let allJobs: JobMatch[] = [];
 
-    if (jobupResult.success) {
-      allJobs.push(...jobupResult.jobs);
-      console.log(`✅ Jobup: Found ${jobupResult.jobs.length} jobs`);
-    } else {
-      console.error('❌ Jobup scraping failed:', jobupResult.error);
-    }
-
     if (googleResult.success) {
       allJobs.push(...googleResult.jobs);
-      console.log(`✅ Google Jobs: Found ${googleResult.jobs.length} jobs`);
+      console.log(`✅ [Scraper ${searchId}] Google Jobs: ${googleResult.jobs.length} jobs found`);
     } else {
-      console.error('❌ Google Jobs scraping failed:', googleResult.error);
+      console.error(`❌ [Scraper ${searchId}] Google Jobs scraping failed:`, googleResult.error);
     }
 
-    // Remove duplicates across sources
+    // Remove duplicates
+    const beforeDedup = allJobs.length;
     const uniqueJobs = this.deduplicateJobs(allJobs);
-    console.log(`📊 Total unique jobs found: ${uniqueJobs.length}`);
+    const duration = Date.now() - startTime;
+
+    console.log(`📊 [Scraper ${searchId}] Completed in ${Math.round(duration/1000)}s:`);
+    console.log(`   📈 Source: Google Jobs (${googleResult.jobs.length})`);
+    console.log(`   🔢 Raw jobs: ${beforeDedup}, Unique: ${uniqueJobs.length} (${beforeDedup - uniqueJobs.length} duplicates removed)`);
+
+    if (uniqueJobs.length > 0) {
+      console.log(`   💼 Recent jobs sample:`);
+      uniqueJobs.slice(0, 3).forEach((job, i) => {
+        console.log(`     ${i + 1}. "${job.title}" at ${job.company} (${job.source})`);
+      });
+      if (uniqueJobs.length > 3) {
+        console.log(`     ... and ${uniqueJobs.length - 3} more jobs`);
+      }
+    }
 
     return uniqueJobs;
   }

@@ -14,11 +14,14 @@ export class SchedulerService {
 
     // Main job alert processing - every 2 hours
     const alertTask = cron.schedule('0 */2 * * *', async () => {
-      console.log('📅 Running scheduled job alert processing...');
+      const scheduledTime = new Date();
+      console.log(`⏰ [${scheduledTime.toISOString()}] SCHEDULED JOB PROCESSING STARTED`);
+      console.log(`🔄 [Scheduler] Next run will be at: ${new Date(scheduledTime.getTime() + 2 * 60 * 60 * 1000).toLocaleString('fr-CH')}`);
       try {
         await this.alertEngine.processAllAlerts();
+        console.log(`✅ [${new Date().toISOString()}] SCHEDULED JOB PROCESSING COMPLETED SUCCESSFULLY`);
       } catch (error) {
-        console.error('❌ Scheduled alert processing failed:', error);
+        console.error(`❌ [${new Date().toISOString()}] SCHEDULED JOB PROCESSING FAILED:`, error);
       }
     }, {
       scheduled: false,
@@ -60,12 +63,12 @@ export class SchedulerService {
 
   stop(): void {
     console.log('🛑 Stopping scheduler service...');
-    
+
     this.tasks.forEach((task, name) => {
       task.stop();
       console.log(`   - Stopped ${name} task`);
     });
-    
+
     this.tasks.clear();
     console.log('✅ Scheduler service stopped');
   }

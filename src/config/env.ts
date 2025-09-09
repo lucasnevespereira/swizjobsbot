@@ -1,0 +1,34 @@
+import dotenv from 'dotenv';
+import { z } from 'zod';
+
+dotenv.config();
+
+// Schema for validation
+const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.string().default('3000').transform(Number),
+  DATABASE_URL: z.string(),
+  TELEGRAM_BOT_TOKEN: z.string(),
+  SERPAPI_API_KEY: z.string(),
+  POSTGRES_USER: z.string().default('username'),
+  POSTGRES_PASSWORD: z.string().default('password'),
+});
+
+// Parse and validate
+const parsedEnv = envSchema.safeParse(process.env);
+
+if (!parsedEnv.success) {
+  console.error('❌ Invalid environment variables:');
+  console.error(parsedEnv.error.format());
+  process.exit(1);
+}
+
+export const env = parsedEnv.data;
+
+// Debug logging
+console.log('✅ Environment loaded:', {
+  NODE_ENV: env.NODE_ENV,
+  PORT: env.PORT,
+  DATABASE_URL: env.DATABASE_URL.replace(/password:[^@]+@/, 'password:***@'),
+  hasTokens: !!env.TELEGRAM_BOT_TOKEN && !!env.SERPAPI_API_KEY
+});

@@ -1,12 +1,9 @@
-import dotenv from 'dotenv';
 import { TelegramBot } from './bot/index.js';
 import { JobScraperService } from './services/jobScraper.js';
 import { AlertEngine } from './services/alertEngine.js';
 import { SchedulerService } from './services/scheduler.js';
-import { startHealthServer } from './utils/health.js';
-
-// Load environment variables
-dotenv.config();
+import { startHealthServer, setAlertEngine } from './utils/health.js';
+import { env } from './config/env.js';
 
 class SwissJobBot {
   private telegramBot!: TelegramBot;
@@ -20,42 +17,27 @@ class SwissJobBot {
   }
 
   private validateEnvironment(): void {
-    const requiredEnvVars = [
-      'TELEGRAM_BOT_TOKEN',
-      'DATABASE_URL',
-      'APIFY_API_TOKEN',
-      'SERPAPI_API_KEY'
-    ];
-
-    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-
-    if (missingVars.length > 0) {
-      console.error('❌ Missing required environment variables:');
-      missingVars.forEach(varName => console.error(`   - ${varName}`));
-      console.error('\n💡 Please check your .env file and ensure all required variables are set.');
-      process.exit(1);
-    }
-
-    console.log('✅ Environment variables validated');
+    // Environment validation is now handled by env.ts with Zod schema
+    console.log('✅ Environment variables validated by config/env.ts');
   }
 
   private initializeServices(): void {
     console.log('🚀 Initializing SwizJobs Bot services...');
 
     // Initialize Telegram bot
-    this.telegramBot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN!);
+    this.telegramBot = new TelegramBot(env.TELEGRAM_BOT_TOKEN);
 
     // Initialize job scraper
-    this.jobScraper = new JobScraperService(
-      process.env.APIFY_API_TOKEN!,
-      process.env.SERPAPI_API_KEY!
-    );
+    this.jobScraper = new JobScraperService(env.SERPAPI_API_KEY);
 
     // Initialize alert engine
     this.alertEngine = new AlertEngine(this.jobScraper, this.telegramBot);
 
     // Initialize scheduler
     this.scheduler = new SchedulerService(this.alertEngine);
+
+    // Set alert engine for admin testing
+    setAlertEngine(this.alertEngine);
 
     console.log('✅ All services initialized');
   }
@@ -65,7 +47,7 @@ class SwissJobBot {
       console.log('🇨🇭 Starting SwizJobs Bot...');
 
       // Start health server
-      startHealthServer(parseInt(process.env.PORT || '3000'));
+      startHealthServer(env.PORT);
 
       // Start Telegram bot
       await this.telegramBot.start();

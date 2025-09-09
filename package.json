@@ -1,6 +1,7 @@
 {
   "name": "swizjobs-bot",
   "version": "1.0.0",
+  "type": "module",
   "description": "Swiz Jobs Bot - Telegram bot for job monitoring in Switzerland",
   "main": "dist/index.js",
   "scripts": {
@@ -11,32 +12,42 @@
     "db:pull": "drizzle-kit pull:pg",
     "db:push": "drizzle-kit push:pg",
     "db:studio": "drizzle-kit studio",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
     "test": "jest"
   },
-  "keywords": ["telegram", "bot", "jobs", "switzerland", "alerts"],
+  "keywords": [
+    "telegram",
+    "bot",
+    "jobs",
+    "switzerland",
+    "alerts"
+  ],
   "author": "Lucas",
   "license": "MIT",
   "dependencies": {
-    "telegraf": "^4.15.6",
-    "drizzle-orm": "^0.29.3",
-    "postgres": "^3.4.3",
-    "apify-client": "^2.7.1",
-    "serpapi": "^2.0.0",
-    "node-cron": "^3.0.3",
     "dotenv": "^16.3.1",
+    "drizzle-orm": "^0.29.3",
+    "node-cron": "^3.0.3",
+    "postgres": "^3.4.3",
+    "serpapi": "^2.0.0",
+    "telegraf": "^4.15.6",
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/jest": "^29.5.11",
     "@types/node": "^20.10.5",
     "@types/node-cron": "^3.0.11",
-    "tsx": "^4.6.2",
-    "typescript": "^5.3.3",
+    "@typescript-eslint/eslint-plugin": "^8.43.0",
+    "@typescript-eslint/parser": "^8.43.0",
     "drizzle-kit": "^0.20.7",
-    "@typescript-eslint/eslint-plugin": "^6.15.0",
-    "@typescript-eslint/parser": "^6.15.0",
-    "eslint": "^8.56.0",
+    "eslint": "^8.57.1",
+    "globals": "^16.3.0",
     "jest": "^29.7.0",
-    "@types/jest": "^29.5.11"
+    "jiti": "^2.5.1",
+    "tsx": "^4.6.2",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.43.0"
   }
 }
