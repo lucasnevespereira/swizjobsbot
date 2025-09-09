@@ -174,6 +174,45 @@ export function startAdminServer(port: number, alertEngine: AlertEngine, schedul
     });
   });
 
+  // Manual scheduler trigger - acts as external cron
+  app.post('/admin/process-all-alerts', async (req, res) => {
+    const startTime = new Date();
+    console.log(`🔄 [${startTime.toISOString()}] MANUAL ALERT PROCESSING STARTED (triggered via API)`);
+    try {
+      await alertEngine.processAllAlerts();
+
+      const endTime = new Date();
+      const duration = endTime.getTime() - startTime.getTime();
+
+      console.log(`✅ [${endTime.toISOString()}] MANUAL ALERT PROCESSING COMPLETED SUCCESSFULLY`);
+      console.log(`📊 [Manual] Duration: ${Math.round(duration / 1000)}s`);
+
+      return res.json({
+        success: true,
+        timestamp: endTime.toISOString(),
+        startTime: startTime.toISOString(),
+        duration: `${Math.round(duration / 1000)}s`,
+        message: 'Alert processing completed successfully'
+      });
+
+    } catch (error) {
+      const endTime = new Date();
+      const duration = endTime.getTime() - startTime.getTime();
+
+      console.error(`❌ [${endTime.toISOString()}] MANUAL ALERT PROCESSING FAILED:`, error);
+      console.log(`📊 [Manual] Failed after: ${Math.round(duration / 1000)}s`);
+
+      return res.status(500).json({
+        success: false,
+        timestamp: endTime.toISOString(),
+        startTime: startTime.toISOString(),
+        duration: `${Math.round(duration / 1000)}s`,
+        error: 'Alert processing failed',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   app.listen(port, () => {
     console.log(`🔧 Admin server listening on port ${port}`);
     console.log(`📋 Available endpoints:`);
@@ -181,5 +220,6 @@ export function startAdminServer(port: number, alertEngine: AlertEngine, schedul
     console.log(`   - POST /admin/test-scraper (Test job scraping)`);
     console.log(`   - POST /admin/trigger (Trigger user alerts)`);
     console.log(`   - GET /admin/scheduler (Scheduler status)`);
+    console.log(`   - POST /admin/process-all-alerts (Manual job processing)`);
   });
 }
