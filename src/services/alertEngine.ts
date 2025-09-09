@@ -51,7 +51,7 @@ export class AlertEngine {
     }
   }
 
-  private async processUserAlerts(user: any): Promise<{jobsFound: number, notificationsSent: number}> {
+  async processUserAlerts(user: any): Promise<{jobsFound: number, notificationsSent: number}> {
     try {
       const userSearches = await db
         .select()

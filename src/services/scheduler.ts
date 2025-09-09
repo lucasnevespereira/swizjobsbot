@@ -1,5 +1,6 @@
 import * as cron from 'node-cron';
 import { AlertEngine } from './alertEngine.js';
+import { env } from '../config/env.js';
 
 export class SchedulerService {
   private alertEngine: AlertEngine;
@@ -11,12 +12,12 @@ export class SchedulerService {
 
   start(): void {
     console.log('⏰ Starting scheduler service...');
+    console.log(`📅 [Scheduler] Using cron pattern: ${env.SCHEDULER_CRON}`);
 
-    // Main job alert processing - every 2 hours
-    const alertTask = cron.schedule('0 */2 * * *', async () => {
+    // Main job alert processing
+    const alertTask = cron.schedule(env.SCHEDULER_CRON, async () => {
       const scheduledTime = new Date();
       console.log(`⏰ [${scheduledTime.toISOString()}] SCHEDULED JOB PROCESSING STARTED`);
-      console.log(`🔄 [Scheduler] Next run will be at: ${new Date(scheduledTime.getTime() + 2 * 60 * 60 * 1000).toLocaleString('fr-CH')}`);
       try {
         await this.alertEngine.processAllAlerts();
         console.log(`✅ [${new Date().toISOString()}] SCHEDULED JOB PROCESSING COMPLETED SUCCESSFULLY`);
@@ -56,7 +57,7 @@ export class SchedulerService {
     cleanupTask.start();
 
     console.log('✅ Scheduler service started with 3 tasks:');
-    console.log('   - Job alerts: Every 2 hours');
+    console.log(`   - Job alerts: ${env.SCHEDULER_CRON}`);
     console.log('   - Health check: Every 30 minutes');
     console.log('   - Cleanup: Daily at 2 AM (CET)');
   }
