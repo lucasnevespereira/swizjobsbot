@@ -64,6 +64,9 @@ export class BotHandlers {
       await db.insert(users).values({
         telegramChatId: chatId,
         username: username,
+        firstName: firstName,
+        createdAt: new Date(),
+        updatedAt: new Date(),
         language: 'fr',
         active: true
       });
