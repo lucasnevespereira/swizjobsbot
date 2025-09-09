@@ -6,8 +6,8 @@ import { JobScraperService } from './jobScraper.js';
 import { TelegramBot } from '../bot/index.js';
 
 export class AlertEngine {
-  private jobScraper: JobScraperService;
-  private telegramBot: TelegramBot;
+  public jobScraper: JobScraperService;
+  public telegramBot: TelegramBot;
 
   constructor(jobScraper: JobScraperService, telegramBot: TelegramBot) {
     this.jobScraper = jobScraper;

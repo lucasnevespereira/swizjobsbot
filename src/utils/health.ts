@@ -41,7 +41,7 @@ export function startHealthServer(port: number, alertEngine: AlertEngine): void 
       let testNotificationSent = false;
       if (jobs.length > 0) {
         try {
-          const testJob = jobs[0];
+          const testJob = jobs[0]!; // Non-null assertion since we checked jobs.length > 0
           await alertEngine.telegramBot.sendMessage(chatId,
             `
 🔔 <b>Nouvelle offre d'emploi!</b>
