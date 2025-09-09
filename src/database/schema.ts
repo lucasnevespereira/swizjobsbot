@@ -3,6 +3,7 @@ import { pgTable, serial, text, timestamp, boolean, integer, jsonb } from 'drizz
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   telegramChatId: text('telegram_chat_id').notNull().unique(),
+  username: text('username'),
   language: text('language').notNull().default('fr'),
   active: boolean('active').notNull().default(true),
   createdAt: timestamp('created_at').notNull().defaultNow(),

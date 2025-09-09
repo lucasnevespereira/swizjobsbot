@@ -8,8 +8,6 @@ dotenv.config();
 
 const connectionString = process.env.DATABASE_URL || 'postgresql://username:password@localhost:5432/swizjobs-bot';
 
-console.log('🔌 Database connection:', connectionString.replace(/password:[^@]+@/, 'password:***@'));
-
 // Create postgres client
 const client = postgres(connectionString);
 

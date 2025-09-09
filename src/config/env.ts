@@ -24,11 +24,3 @@ if (!parsedEnv.success) {
 }
 
 export const env = parsedEnv.data;
-
-// Debug logging
-console.log('✅ Environment loaded:', {
-  NODE_ENV: env.NODE_ENV,
-  PORT: env.PORT,
-  DATABASE_URL: env.DATABASE_URL.replace(/password:[^@]+@/, 'password:***@'),
-  hasTokens: !!env.TELEGRAM_BOT_TOKEN && !!env.SERPAPI_API_KEY
-});
