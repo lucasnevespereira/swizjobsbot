@@ -1,11 +1,10 @@
-import * as cron from 'node-cron';
 import { Cron } from 'croner';
 import { AlertEngine } from './alertEngine.js';
 import { env } from '../config/env.js';
 
 export class SchedulerService {
   private alertEngine: AlertEngine;
-  private tasks: Map<string, cron.ScheduledTask> = new Map();
+  private tasks: Map<string, Cron> = new Map();
 
   constructor(alertEngine: AlertEngine) {
     this.alertEngine = alertEngine;
@@ -28,8 +27,12 @@ export class SchedulerService {
       console.error(`❌ [Scheduler] Invalid cron pattern: ${env.SCHEDULER_CRON}`, error);
     }
 
-    // Main job alert processing
-    const alertTask = cron.schedule(env.SCHEDULER_CRON, async () => {
+    // Main job alert processing using Cron (more reliable)
+    console.log('🔧 [Scheduler] Creating main alert task with Cron...');
+    const alertTask = new Cron(env.SCHEDULER_CRON, {
+      timezone: 'Europe/Zurich',
+      paused: false
+    }, async () => {
       const scheduledTime = new Date();
       console.log(`⏰ [${scheduledTime.toISOString()}] SCHEDULED JOB PROCESSING STARTED`);
       console.log(`🕒 [Scheduler] Local time: ${scheduledTime.toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' })}`);
@@ -39,46 +42,44 @@ export class SchedulerService {
         console.log(`✅ [${new Date().toISOString()}] SCHEDULED JOB PROCESSING COMPLETED SUCCESSFULLY`);
 
         // Show next run time after completion
-        const nextRun = new Cron(env.SCHEDULER_CRON, { timezone: 'Europe/Zurich' });
-        const nextRunTime = nextRun.nextRun();
+        const nextRunTime = alertTask.nextRun();
         if (nextRunTime) {
           console.log(`🕒 [Scheduler] Next job alert run: ${nextRunTime.toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' })}`);
         }
-        nextRun.stop();
       } catch (error) {
         console.error(`❌ [${new Date().toISOString()}] SCHEDULED JOB PROCESSING FAILED:`, error);
       }
-    }, {
-      scheduled: false,
-      timezone: 'Europe/Zurich'
     });
 
-    // Health check task - every 30 minutes
-    const healthTask = cron.schedule('*/30 * * * *', () => {
+    console.log('✅ [Scheduler] Alert task created successfully');
+
+    // Health check task - every 30 minutes using Cron
+    const healthTask = new Cron('*/30 * * * *', {
+      timezone: 'Europe/Zurich',
+      paused: false
+    }, () => {
       console.log('💓 Health check - System is running');
       console.log(`📊 Active tasks: ${this.tasks.size}`);
-    }, {
-      scheduled: false,
-      timezone: 'Europe/Zurich'
     });
 
-    // Database cleanup task - daily at 2 AM
-    const cleanupTask = cron.schedule('0 2 * * *', async () => {
+    // Database cleanup task - daily at 2 AM using Cron
+    const cleanupTask = new Cron('0 2 * * *', {
+      timezone: 'Europe/Zurich',
+      paused: false
+    }, async () => {
       console.log('🧹 Running daily cleanup...');
       await this.performCleanup();
-    }, {
-      scheduled: false,
-      timezone: 'Europe/Zurich'
     });
 
     this.tasks.set('alerts', alertTask);
     this.tasks.set('health', healthTask);
     this.tasks.set('cleanup', cleanupTask);
 
-    // Start all tasks
-    alertTask.start();
-    healthTask.start();
-    cleanupTask.start();
+    // Tasks are already started (paused: false), just log status
+    console.log('🚀 [Scheduler] All tasks are running automatically with Cron');
+    console.log(`✅ [Scheduler] Alert task running: ${alertTask.isRunning()}`);
+    console.log(`✅ [Scheduler] Health task running: ${healthTask.isRunning()}`);
+    console.log(`✅ [Scheduler] Cleanup task running: ${cleanupTask.isRunning()}`);
 
     console.log('✅ Scheduler service started with 3 tasks:');
     console.log(`   - Job alerts: ${env.SCHEDULER_CRON}`);
@@ -125,8 +126,7 @@ export class SchedulerService {
   getTaskStatus(): Record<string, boolean> {
     const status: Record<string, boolean> = {};
     this.tasks.forEach((task, name) => {
-      // Just return true if task exists and is scheduled
-      status[name] = true;
+      status[name] = task.isRunning();
     });
     return status;
   }
