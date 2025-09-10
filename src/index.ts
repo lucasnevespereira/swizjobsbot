@@ -61,29 +61,36 @@ class SwissJobBot {
     try {
       console.log('🇨🇭 Starting SwizJobs Bot...');
 
-      if (env.NODE_ENV === ENV.production) {
-        console.log('🤖 Starting Telegram bot in production mode...');
-        await this.telegramBot.start();
-        console.log('✅ Telegram bot started successfully');
-      }
-
-      // Start scheduler
+      // Start scheduler first
       console.log('⏰ Starting scheduler...');
       this.scheduler.start();
       console.log('✅ Scheduler started successfully');
 
-      // Start HTTP server (keeps process alive)
-      this.app.listen(env.PORT, () => {
+      // Start HTTP server (keeps process alive) - BEFORE Telegram bot
+      this.app.listen(env.PORT, async () => {
         console.log(`🔧 HTTP server listening on port ${env.PORT}`);
         console.log(`📋 Available endpoints:`);
         console.log(`   - GET /health (Health check)`);
-        console.log(`   - POST /admin/test (Test job scraping)`);
+        console.log(`   - POST /admin/test (Test job scraper)`);
         console.log(`   - POST /admin/trigger (Trigger user alerts)`);
         console.log(`   - GET /admin/scheduler (Scheduler status)`);
         console.log(`   - GET /jobs/process (Job processing)`);
         console.log(`   - GET /jobs/status (Job status)`);
         console.log(`   - POST /jobs/cleanup (Job cleanup)`);
         console.log('');
+
+        // Start Telegram bot AFTER HTTP server is running
+        if (env.NODE_ENV === ENV.production) {
+          try {
+            console.log('🤖 Starting Telegram bot in production mode...');
+            await this.telegramBot.start();
+            console.log('✅ Telegram bot started successfully');
+          } catch (error) {
+            console.error('❌ Failed to start Telegram bot, but HTTP server is still running:', error);
+            // Don't crash the whole app - HTTP server stays alive
+          }
+        }
+
         console.log('');
         console.log('🎉 SwizJobs Bot is now running!');
         console.log('📱 Telegram bot is listening for commands');

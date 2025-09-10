@@ -48,10 +48,13 @@ export class TelegramBot {
         throw new Error('Invalid Telegram bot token');
       }
 
-      console.log('🚀 Launching Telegram bot...');
+      console.log('🚀 Launching Telegram bot with polling...');
       
-      // Add timeout to prevent hanging
-      const launchPromise = this.bot.launch();
+      // Use polling mode explicitly (more reliable for VPS)
+      const launchPromise = this.bot.launch({
+        dropPendingUpdates: true
+      });
+      
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Bot launch timeout after 30 seconds')), 30000);
       });
