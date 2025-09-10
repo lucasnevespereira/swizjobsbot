@@ -1,26 +1,29 @@
-import express from 'express';
+import { Request, Response } from 'express';
 import { db } from '../database/connection.js';
 import { users } from '../database/schema.js';
 import { eq } from 'drizzle-orm';
 import { JobMatch } from '../types/index.js';
-import { AlertEngine } from '../services/alertEngine.js';
+import { JobService } from '../services/jobService.js';
+import { TelegramBot } from '../bot/index.js';
 import { SchedulerService } from '../services/scheduler.js';
 
-export function startAdminServer(port: number, alertEngine: AlertEngine, scheduler?: SchedulerService): void {
-  const app = express();
-  app.use(express.json());
+export class AdminHandlers {
+  constructor(
+    private jobService: JobService,
+    private telegramBot: TelegramBot,
+    private scheduler?: SchedulerService
+  ) {}
 
-  // Health check endpoint
-  app.get('/health', (req, res) => {
+  healthCheck = (req: Request, res: Response) => {
     return res.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
       service: 'swiszjobs-bot'
     });
-  });
+  };
 
-  // Admin test scraper endpoint
-  app.post('/admin/test-scraper', async (req, res) => {
+
+  testScraper = async (req: Request, res: Response) => {
     try {
       const { keywords, locations, chatId } = req.body;
 
@@ -30,30 +33,27 @@ export function startAdminServer(port: number, alertEngine: AlertEngine, schedul
         });
       }
 
-
       console.log(`🧪 [Admin Test] Testing scraper with keywords=[${keywords.join(', ')}], locations=[${locations.join(', ')}], chatId=${chatId}`);
 
-      // Test scraping
       const startTime = Date.now();
-      const jobs = await alertEngine.jobScraper.scrapeAllSources(keywords, locations);
+      const jobs = await this.jobService.jobScraper.scrapeAllSources(keywords, locations);
       const scrapeDuration = Date.now() - startTime;
 
-      // Send test notification if jobs found
       let testNotificationSent = false;
       if (jobs.length > 0) {
         try {
-          const testJob = jobs[0]!; // Non-null assertion since we checked jobs.length > 0
-          await alertEngine.telegramBot.sendMessage(chatId,
+          const testJob = jobs[0]!;
+          await this.telegramBot.sendMessage(chatId,
             `
-🔔 <b>Nouvelle offre d'emploi!</b>
+            🔔 <b>Nouvelle offre d'emploi!</b>
 
-📋 <b>Titre:</b> ${testJob.title}
-🏢 <b>Entreprise:</b> ${testJob.company}
-📍 <b>Lieu:</b> ${testJob.location}
-📅 <b>Publié:</b> ${testJob.postedDate.toLocaleDateString('fr-FR')}
-🔗 <a href="${testJob.url}">📋 Postuler maintenant</a>
+            📋 <b>Titre:</b> ${testJob.title}
+            🏢 <b>Entreprise:</b> ${testJob.company}
+            📍 <b>Lieu:</b> ${testJob.location}
+            📅 <b>Publié:</b> ${testJob.postedDate.toLocaleDateString('fr-FR')}
+            🔗 <a href="${testJob.url}">📋 Postuler maintenant</a>
 
-<i>🔧 Cette alerte a été envoyée manuellement par l'administrateur</i>`,
+            <i>🔧 Cette alerte a été envoyée manuellement par l'administrateur</i>`,
             { parse_mode: 'HTML' }
           );
           testNotificationSent = true;
@@ -95,10 +95,9 @@ export function startAdminServer(port: number, alertEngine: AlertEngine, schedul
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
-  });
+  };
 
-  // Admin trigger alerts for specific user
-  app.post('/admin/trigger', async (req, res) => {
+  triggerUserAlerts = async (req: Request, res: Response) => {
     try {
       const { chatId } = req.body;
 
@@ -108,12 +107,10 @@ export function startAdminServer(port: number, alertEngine: AlertEngine, schedul
         });
       }
 
-
       console.log(`🎮 [Admin Trigger] Processing alerts for user ${chatId}`);
 
       const startTime = Date.now();
 
-      // Get user from database
       const user = await db.select().from(users).where(eq(users.telegramChatId, chatId)).limit(1);
 
       if (user.length === 0) {
@@ -122,8 +119,7 @@ export function startAdminServer(port: number, alertEngine: AlertEngine, schedul
         });
       }
 
-      // Process alerts for this specific user
-      const userStats = await alertEngine.processUserAlerts(user[0]);
+      const userStats = await this.jobService.processUserAlerts(user[0]);
       const duration = Date.now() - startTime;
 
       const response = {
@@ -151,18 +147,17 @@ export function startAdminServer(port: number, alertEngine: AlertEngine, schedul
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
-  });
+  };
 
-  // Admin scheduler status endpoint
-  app.get('/admin/scheduler', (req, res) => {
-    if (!scheduler) {
+  schedulerStatus = (req: Request, res: Response) => {
+    if (!this.scheduler) {
       return res.status(500).json({
         error: 'Scheduler not available'
       });
     }
 
-    const nextRunInfo = scheduler.getNextRunTime();
-    const taskStatus = scheduler.getTaskStatus();
+    const nextRunInfo = this.scheduler.getNextRunTime();
+    const taskStatus = this.scheduler.getTaskStatus();
 
     return res.json({
       success: true,
@@ -172,54 +167,5 @@ export function startAdminServer(port: number, alertEngine: AlertEngine, schedul
         tasks: taskStatus
       }
     });
-  });
-
-  // Manual scheduler trigger - acts as external cron
-  app.get('/admin/process-all-alerts', async (req, res) => {
-    const startTime = new Date();
-    console.log(`🔄 [${startTime.toISOString()}] MANUAL ALERT PROCESSING STARTED (triggered via API)`);
-    try {
-      await alertEngine.processAllAlerts();
-
-      const endTime = new Date();
-      const duration = endTime.getTime() - startTime.getTime();
-
-      console.log(`✅ [${endTime.toISOString()}] MANUAL ALERT PROCESSING COMPLETED SUCCESSFULLY`);
-      console.log(`📊 [Manual] Duration: ${Math.round(duration / 1000)}s`);
-
-      return res.json({
-        success: true,
-        timestamp: endTime.toISOString(),
-        startTime: startTime.toISOString(),
-        duration: `${Math.round(duration / 1000)}s`,
-        message: 'Alert processing completed successfully'
-      });
-
-    } catch (error) {
-      const endTime = new Date();
-      const duration = endTime.getTime() - startTime.getTime();
-
-      console.error(`❌ [${endTime.toISOString()}] MANUAL ALERT PROCESSING FAILED:`, error);
-      console.log(`📊 [Manual] Failed after: ${Math.round(duration / 1000)}s`);
-
-      return res.status(500).json({
-        success: false,
-        timestamp: endTime.toISOString(),
-        startTime: startTime.toISOString(),
-        duration: `${Math.round(duration / 1000)}s`,
-        error: 'Alert processing failed',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  app.listen(port, () => {
-    console.log(`🔧 Admin server listening on port ${port}`);
-    console.log(`📋 Available endpoints:`);
-    console.log(`   - GET /health (Health check)`);
-    console.log(`   - POST /admin/test-scraper (Test job scraping)`);
-    console.log(`   - POST /admin/trigger (Trigger user alerts)`);
-    console.log(`   - GET /admin/scheduler (Scheduler status)`);
-    console.log(`   - GET /admin/process-all-alerts (Manual job processing)`);
-  });
+  };
 }

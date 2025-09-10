@@ -13,7 +13,6 @@ if [ ! -f .env ]; then
     echo ""
     echo "⚠️  Please edit .env and add your API tokens:"
     echo "   - TELEGRAM_BOT_TOKEN (from @BotFather)"
-    echo "   - APIFY_API_TOKEN (from apify.com)"
     echo "   - SERPAPI_API_KEY (from serpapi.com)"
     echo "   - DATABASE_URL (your PostgreSQL connection string)"
     echo ""

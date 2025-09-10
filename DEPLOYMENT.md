@@ -109,6 +109,8 @@ PORT=3000
 DATABASE_URL=postgresql://username:password@ep-xxx.region.aws.neon.tech/neondb?sslmode=require
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 SERPAPI_API_KEY=your_serpapi_key_here
+SCHEDULER_ENABLED=true
+SCHEDULER_CRON=0 */2 * * *
 ```
 
 **Save**: `Ctrl+X` → `Y` → `Enter`
@@ -146,8 +148,20 @@ npm start
 
 ## 🚀 Production Deployment
 
-### 1. Start with PM2
+### 1. Quick Deploy with Makefile
 
+```bash
+# One command deployment
+make deploy
+
+# Install cron jobs for automatic processing
+make cron-install
+
+# Check everything is working
+make health
+```
+
+**Manual PM2 approach** (if you prefer):
 ```bash
 # Start bot as background process
 pm2 start dist/index.js --name swizjobsbot
@@ -167,7 +181,49 @@ pm2 startup
 pm2 save
 ```
 
-### 3. Monitor Process
+## ⏰ Job Scheduling Setup
+
+Choose your preferred scheduling method:
+
+### Option 1: Internal Scheduler (Recommended) ✅
+
+The bot includes a built-in scheduler that handles everything automatically:
+
+- ✅ **Already configured**: Uses `SCHEDULER_ENABLED=true` and `SCHEDULER_CRON=0 */2 * * *` from your .env
+- ✅ **Automatic**: Job processing every 2 hours + daily cleanup at 2 AM
+- ✅ **Integrated logging**: All logs appear in PM2 logs
+- ✅ **Health monitoring**: Built-in health checks every 30 minutes
+- ✅ **No additional setup needed**
+
+**Check scheduler status:**
+```bash
+curl http://localhost:3000/admin/scheduler
+```
+
+### Option 2: External Cron (Alternative)
+
+If you prefer system-level cron jobs instead:
+
+**Using Makefile:**
+```bash
+# Install cron jobs for automatic processing
+make cron-install
+
+# Verify cron installation
+make cron-status
+```
+
+**Manual cron setup:**
+```bash
+crontab -e
+# Add these lines:
+0 */2 * * * /usr/bin/curl -s -f http://localhost:3000/jobs/process || echo "SwizJobs: Job processing failed" | logger
+0 3 * * 0 /usr/bin/curl -s -f -X POST http://localhost:3000/jobs/cleanup || echo "SwizJobs: Job cleanup failed" | logger
+```
+
+**Note**: If using external cron, you can disable internal scheduler by setting `SCHEDULER_ENABLED=false` in your .env file.
+
+## 📊 Monitor Process
 
 ```bash
 # View live logs
@@ -180,35 +236,6 @@ pm2 show swizjobsbot
 pm2 monit
 ```
 
-## 🔒 Security Configuration
-
-### 1. Configure Firewall
-
-```bash
-# Install UFW firewall
-sudo apt install ufw -y
-
-# Allow SSH access (IMPORTANT!)
-sudo ufw allow ssh
-sudo ufw allow 22
-
-# Allow bot port
-sudo ufw allow 3000
-
-# Enable firewall
-sudo ufw enable
-
-# Check status
-sudo ufw status
-```
-
-### 2. Secure Environment File
-
-```bash
-# Set proper permissions on .env
-chmod 600 .env
-chown root:root .env
-```
 
 ## 🧪 Testing Deployment
 
@@ -226,7 +253,7 @@ curl http://localhost:3000/health
 
 ```bash
 # Test job scraping (replace YOUR_CHAT_ID)
-curl -X POST http://localhost:3000/admin/test-scraper \
+curl -X POST http://localhost:3000/admin/test \
   -H "Content-Type: application/json" \
   -d '{
     "keywords": ["développeur", "software"],
@@ -235,10 +262,20 @@ curl -X POST http://localhost:3000/admin/test-scraper \
   }'
 ```
 
-### 3. Telegram Bot Testing
+### 3. Scheduler Status
+
+```bash
+# Check internal scheduler status
+curl http://localhost:3000/admin/scheduler
+
+# Expected response shows next run time and active tasks
+```
+
+### 4. Telegram Bot Testing
 
 1. **Open Telegram app**
 2. **Search for your bot**: `@your_bot_username`
+   - Or try the live bot: [t.me/swizjobs_bot](https://t.me/swizjobs_bot)
 3. **Test commands**:
    - `/start` - Should show welcome message
    - `/register` - Should register new user
@@ -281,21 +318,6 @@ sudo nano /etc/caddy/Caddyfile
 ```caddy
 swizjobsbot.yourdomain.com {
     reverse_proxy localhost:3000
-
-    encode gzip
-
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Content-Type-Options "nosniff"
-        X-Frame-Options "DENY"
-        X-XSS-Protection "1; mode=block"
-        -Server
-    }
-
-    log {
-        output file /var/log/caddy/swizjobsbot.log
-        format json
-    }
 }
 ```
 
@@ -478,7 +500,8 @@ Your deployment is successful when:
 - [ ] **Database**: `npm run db:push` completes successfully
 - [ ] **Telegram Bot**: Responds to `/start` command
 - [ ] **Admin Test**: Scraper finds jobs and sends notifications
-- [ ] **Logs**: Show scheduled processing every 2 hours
+- [ ] **Scheduler**: `curl http://localhost:3000/admin/scheduler` shows next run time
+- [ ] **Logs**: Show scheduled processing (internal scheduler or cron jobs)
 - [ ] **Auto-Start**: Bot restarts after server reboot
 - [ ] **Domain** (if configured): HTTPS access works
 

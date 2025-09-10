@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: swizjobs-bot
+      POSTGRES_DB: swizjobsbot
       POSTGRES_USER: ${POSTGRES_USER:-username}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
     volumes:
@@ -10,7 +10,7 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-username} -d swizjobs-bot"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-username} -d swizjobsbot"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -19,9 +19,8 @@ services:
   swiss-job-bot:
     build: .
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-username}:${POSTGRES_PASSWORD:-password}@postgres:5432/swizjobs-bot
+      DATABASE_URL: postgresql://${POSTGRES_USER:-username}:${POSTGRES_PASSWORD:-password}@postgres:5432/swizjobsbot
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      APIFY_API_TOKEN: ${APIFY_API_TOKEN}
       SERPAPI_API_KEY: ${SERPAPI_API_KEY}
       NODE_ENV: production
       TZ: Europe/Zurich

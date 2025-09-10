@@ -1,9 +1,11 @@
 <div align="center">
   <img src="assets/logo.png" alt="SwizJobs Bot Logo" width="120" height="120">
-  
+
   # SwizJobs Bot - Swiss Job Alert Bot
-  
+
   A Telegram bot that monitors job postings in Switzerland and sends personalized alerts to users. Built for French-speaking users with family-friendly interface.
+
+  **🚀 Try it now: [t.me/swizjobs_bot](https://t.me/swizjobs_bot)**
 </div>
 
 ## Features
@@ -12,8 +14,10 @@
 - 🔍 **Google Jobs Integration** - Comprehensive job aggregation via SerpApi
 - 🎯 **Smart Filtering** - Keywords, locations, and date-based filtering
 - 📱 **Real-time Notifications** - Instant job alerts via Telegram
-- ⏰ **Automated Scheduling** - Background processing every 2 hours
+- ⏰ **Flexible Scheduling** - Internal Node.js scheduler or external cron via HTTP endpoints
 - 🗄️ **PostgreSQL Database** - Reliable data storage with Drizzle ORM
+- 🧹 **Automatic Cleanup** - 90-day job posting retention policy
+- 📊 **System Monitoring** - Database health and statistics endpoints
 - 🐳 **Docker Ready** - Easy deployment with Docker Compose
 
 ## Job Sources
@@ -60,6 +64,8 @@ Required environment variables:
 TELEGRAM_BOT_TOKEN=your_bot_token
 DATABASE_URL=postgresql://user:password@localhost:5432/swiss_job_bot
 SERPAPI_API_KEY=your_serpapi_key
+SCHEDULER_ENABLED=true      # Enable internal scheduler (true/false)
+SCHEDULER_CRON=0 */2 * * *  # Cron pattern for job processing (every 2 hours)
 ```
 
 ### 3. Development Setup
@@ -89,27 +95,31 @@ cp .env.example .env
 docker-compose up -d
 
 # View logs
-docker-compose logs -f swizjobs-bot
+docker-compose logs -f swizjobsbot
 ```
 
 ## Architecture
 
 ```
-📦 swizjobs-bot/
+📦 swizjobsbot/
 ├── 🤖 src/bot/          # Telegram bot handlers
-├── 🔧 src/services/     # Job scraping & alerts
+├── ⚙️  src/config/       # Environment configuration
 ├── 🗃️ src/database/     # Schema & migrations
+├── 🔧 src/handlers/     # HTTP endpoint handlers
+├── 🔧 src/services/     # Job scraping & alerts
 ├── 📝 src/types/        # TypeScript definitions
 ├── 🛠️ src/utils/        # Helper functions
-└── 🐳 docker/          # Deployment configs
+└── 📄 src/index.ts      # Application entry point
 ```
 
 ### Core Services
 
 1. **TelegramBot** - Handles user interactions and commands
 2. **JobScraperService** - Scrapes jobs from Google Jobs (includes Jobup, Jobs.ch, and other Swiss job boards)
-3. **AlertEngine** - Matches jobs to user criteria and sends notifications
-4. **SchedulerService** - Manages automated background tasks
+3. **JobService** - Central service for job processing, user alerts, and database cleanup
+4. **SchedulerService** - Internal Node.js scheduler (optional - can use external cron instead)
+5. **JobHandlers** - HTTP endpoints for job processing and cleanup
+6. **AdminHandlers** - Administrative endpoints for monitoring and testing
 
 ## Database Schema
 
@@ -145,7 +155,7 @@ railway up
 ```bash
 # Clone repository
 git clone <your-repo>
-cd swizjobs-bot
+cd swizjobsbot
 
 # Set up environment
 cp .env.example .env
@@ -157,14 +167,85 @@ npm run build
 
 # Start with PM2
 npm install -g pm2
-pm2 start dist/index.js --name swizjobs-bot
+pm2 start dist/index.js --name swizjobsbot
 pm2 save
 pm2 startup
 ```
 
+## HTTP Endpoints
+
+### Health & Monitoring
+- `GET /health` - Basic health check
+- `GET /jobs/status` - Comprehensive system status with database statistics
+
+### Job Processing
+- `GET /jobs/process` - Process job alerts for all users
+- `POST /jobs/cleanup` - Clean up job postings older than 90 days
+- `POST /admin/test` - Test job scraping with specific criteria
+- `POST /admin/trigger` - Trigger alerts for a specific user
+- `GET /admin/scheduler` - Check internal scheduler status
+
+## Scheduling Options
+
+Choose between **internal scheduler** or **external cron** for job processing:
+
+### Option 1: Internal Scheduler (Recommended)
+
+Enable the internal scheduler with these environment variables:
+
+```env
+SCHEDULER_ENABLED=true      # Enable internal scheduler
+SCHEDULER_CRON=0 */2 * * *  # Every 2 hours
+```
+
+The app automatically handles:
+- ⏰ Job processing every 2 hours
+- 🧹 Database cleanup daily at 2 AM
+- 💓 Health checks every 30 minutes
+
+**Pros**: Simple setup, integrated logging, automatic cleanup
+**Cons**: Depends on app staying running
+
+### Option 2: External Cron (Alternative)
+
+Disable internal scheduler and use system cron instead:
+
+```env
+SCHEDULER_ENABLED=false     # Disable internal scheduler
+```
+
+Use system cron to call HTTP endpoints. The Makefile handles setup:
+
+```bash
+# Install cron jobs automatically
+make cron-install
+
+# Check what was installed
+make cron-status
+
+# Remove cron jobs if needed
+make cron-remove
+```
+
+This installs:
+- **Job processing**: Every 2 hours (`GET /jobs/process`)
+- **Database cleanup**: Weekly on Sundays at 3 AM (`POST /jobs/cleanup`)
+
+**Pros**: Independent of app process, system-level reliability
+**Cons**: Additional setup, external dependency
+
+### Manual Cron Setup
+
+```bash
+# Add to crontab (crontab -e)
+0 */2 * * * /usr/bin/curl -s -f http://localhost:3000/jobs/process || echo "swizjobsbot: Job processing failed" | logger
+0 3 * * 0 /usr/bin/curl -s -f -X POST http://localhost:3000/jobs/cleanup || echo "swizjobsbot: Job cleanup failed" | logger
+```
+
 ## Monitoring
 
-- Health check endpoint: `http://localhost:3000/health`
+- Health check: `GET /health`
+- System status: `GET /jobs/status` (includes user count, job statistics, cleanup metrics)
 - Logs: Check Docker logs or PM2 logs
 - Database: Monitor PostgreSQL connections and query performance
 

@@ -1,11 +1,32 @@
 import { db } from '../database/connection.js';
 import { users, jobSearches, jobPostings, userNotifications } from '../database/schema.js';
-import { eq, and, notInArray } from 'drizzle-orm';
+import { eq, and, notInArray, lt } from 'drizzle-orm';
 import { JobMatch } from '../types/index.js';
 import { JobScraperService } from './jobScraper.js';
 import { TelegramBot } from '../bot/index.js';
 
-export class AlertEngine {
+export interface ProcessResult {
+  success: boolean;
+  startTime: Date;
+  endTime: Date;
+  duration: number;
+  usersProcessed: number;
+  jobsFound: number;
+  notificationsSent: number;
+  error?: string;
+}
+
+export interface CleanupResult {
+  success: boolean;
+  startTime: Date;
+  endTime: Date;
+  duration: number;
+  deletedJobsCount: number;
+  cutoffDate: Date;
+  error?: string;
+}
+
+export class JobService {
   public jobScraper: JobScraperService;
   public telegramBot: TelegramBot;
 
@@ -14,9 +35,9 @@ export class AlertEngine {
     this.telegramBot = telegramBot;
   }
 
-  async processAllAlerts(): Promise<void> {
+  async processAllJobs(): Promise<ProcessResult> {
     const startTime = new Date();
-    console.log(`🚀 [${startTime.toISOString()}] Starting scheduled alert processing...`);
+    console.log(`🔄 [${startTime.toISOString()}] ALERT PROCESSING STARTED`);
 
     try {
       const activeUsers = await db
@@ -24,7 +45,7 @@ export class AlertEngine {
         .from(users)
         .where(eq(users.active, true));
 
-      console.log(`👥 [Alert Engine] Found ${activeUsers.length} active users to process`);
+      console.log(`👥 [Job Service] Found ${activeUsers.length} active users to process`);
 
       let totalJobsFound = 0;
       let totalNotificationsSent = 0;
@@ -39,16 +60,45 @@ export class AlertEngine {
       const endTime = new Date();
       const duration = endTime.getTime() - startTime.getTime();
 
-      console.log(`✅ [${endTime.toISOString()}] Alert processing completed:`);
-      console.log(`   📊 Duration: ${Math.round(duration / 1000)}s`);
+      console.log(`✅ [${endTime.toISOString()}] ALERT PROCESSING COMPLETED SUCCESSFULLY`);
+      console.log(`📊 [Jobs] Duration: ${Math.round(duration / 1000)}s`);
       console.log(`   👥 Users processed: ${activeUsers.length}`);
       console.log(`   💼 Total jobs found: ${totalJobsFound}`);
       console.log(`   📱 Notifications sent: ${totalNotificationsSent}`);
 
+      return {
+        success: true,
+        startTime,
+        endTime,
+        duration,
+        usersProcessed: activeUsers.length,
+        jobsFound: totalJobsFound,
+        notificationsSent: totalNotificationsSent
+      };
+
     } catch (error) {
-      console.error(`❌ [${new Date().toISOString()}] Error in alert processing:`, error);
-      throw error;
+      const endTime = new Date();
+      const duration = endTime.getTime() - startTime.getTime();
+
+      console.error(`❌ [${endTime.toISOString()}] ALERT PROCESSING FAILED:`, error);
+      console.log(`📊 [Jobs] Failed after: ${Math.round(duration / 1000)}s`);
+
+      return {
+        success: false,
+        startTime,
+        endTime,
+        duration,
+        usersProcessed: 0,
+        jobsFound: 0,
+        notificationsSent: 0,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
+  }
+
+  // Keep the old method for backward compatibility
+  async processAllAlerts(): Promise<void> {
+    await this.processAllJobs();
   }
 
   async processUserAlerts(user: any): Promise<{jobsFound: number, notificationsSent: number}> {
@@ -244,6 +294,55 @@ export class AlertEngine {
       } catch (error) {
         console.error(`❌ Error recording notification:`, error);
       }
+    }
+  }
+
+  async cleanupJobs(retentionDays: number = 90): Promise<CleanupResult> {
+    const startTime = new Date();
+    console.log(`🧹 [${startTime.toISOString()}] DATABASE CLEANUP STARTED`);
+
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+
+      // Delete old job postings (cascades to user_notifications)
+      const deletedJobs = await db
+        .delete(jobPostings)
+        .where(lt(jobPostings.createdAt, cutoffDate))
+        .returning({ id: jobPostings.id });
+
+      const endTime = new Date();
+      const duration = endTime.getTime() - startTime.getTime();
+
+      console.log(`✅ [${endTime.toISOString()}] DATABASE CLEANUP COMPLETED`);
+      console.log(`📊 [Cleanup] Deleted ${deletedJobs.length} jobs older than ${retentionDays} days`);
+      console.log(`📊 [Cleanup] Duration: ${Math.round(duration / 1000)}s`);
+
+      return {
+        success: true,
+        startTime,
+        endTime,
+        duration,
+        deletedJobsCount: deletedJobs.length,
+        cutoffDate
+      };
+
+    } catch (error) {
+      const endTime = new Date();
+      const duration = endTime.getTime() - startTime.getTime();
+
+      console.error(`❌ [${endTime.toISOString()}] DATABASE CLEANUP FAILED:`, error);
+      console.log(`📊 [Cleanup] Failed after: ${Math.round(duration / 1000)}s`);
+
+      return {
+        success: false,
+        startTime,
+        endTime,
+        duration,
+        deletedJobsCount: 0,
+        cutoffDate: new Date(),
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
     }
   }
 

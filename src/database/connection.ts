@@ -6,7 +6,7 @@ import * as schema from './schema.js';
 // Load environment variables first
 dotenv.config();
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://username:password@localhost:5432/swizjobs-bot';
+const connectionString = process.env.DATABASE_URL || 'postgresql://username:password@localhost:5432/swizjobsbot';
 
 // Create postgres client
 const client = postgres(connectionString);

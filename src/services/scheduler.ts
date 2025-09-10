@@ -1,87 +1,95 @@
-import { Cron } from 'croner';
-import { AlertEngine } from './alertEngine.js';
+import * as cron from 'node-cron';
+import { CronExpressionParser } from 'cron-parser';
+import { JobService } from './jobService.js';
 import { env } from '../config/env.js';
+import { ENV, TIMEZONE, LOCALE, CRON_SCHEDULE } from '../types/enum.js';
 
 export class SchedulerService {
-  private alertEngine: AlertEngine;
-  private tasks: Map<string, Cron> = new Map();
+  private jobService: JobService;
+  private tasks: Map<string, cron.ScheduledTask> = new Map();
 
-  constructor(alertEngine: AlertEngine) {
-    this.alertEngine = alertEngine;
+  constructor(jobService: JobService) {
+    this.jobService = jobService;
   }
 
   start(): void {
     console.log('⏰ Starting scheduler service...');
-    console.log(`📅 [Scheduler] Using cron pattern: ${env.SCHEDULER_CRON}`);
+    console.log(`📅 [Scheduler] Scheduler enabled: ${env.SCHEDULER_ENABLED}`);
 
-    // Validate and show next run time
-    try {
-      const nextRun = new Cron(env.SCHEDULER_CRON, { timezone: 'Europe/Zurich' });
-      const nextRunTime = nextRun.nextRun();
-      if (nextRunTime) {
-        console.log(`🕒 [Scheduler] Next job alert run scheduled for: ${nextRunTime.toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' })}`);
-        console.log(`⏰ [Scheduler] Current time (CET): ${new Date().toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' })}`);
-      }
-      nextRun.stop(); // Stop the test cron
-    } catch (error) {
-      console.error(`❌ [Scheduler] Invalid cron pattern: ${env.SCHEDULER_CRON}`, error);
+    if (!env.SCHEDULER_ENABLED) {
+      console.log('📴 [Scheduler] Internal scheduling disabled');
+      console.log('💡 [Scheduler] Use external cron to call HTTP endpoints, or set SCHEDULER_ENABLED=true');
+      console.log('📍 [Scheduler] Available endpoints: GET /jobs/process, POST /jobs/cleanup');
     }
 
-    // Main job alert processing using Cron (more reliable)
-    console.log('🔧 [Scheduler] Creating main alert task with Cron...');
-    const alertTask = new Cron(env.SCHEDULER_CRON, {
-      timezone: 'Europe/Zurich',
-      paused: false
-    }, async () => {
+    // Validate cron expression
+    if (!cron.validate(env.SCHEDULER_CRON)) {
+      console.error(`❌ [Scheduler] Invalid cron pattern: "${env.SCHEDULER_CRON}"`);
+      console.log('💡 [Scheduler] Use valid 5-field cron expression (e.g., "0 */2 * * *" for every 2 hours)');
+      return;
+    }
+
+    console.log(`📅 [Scheduler] Cron pattern: ${env.SCHEDULER_CRON}`);
+
+    // Main job alert processing using configurable cron
+    const alertTask = cron.schedule(env.SCHEDULER_CRON, async () => {
       const scheduledTime = new Date();
-      console.log(`⏰ [${scheduledTime.toISOString()}] SCHEDULED JOB PROCESSING STARTED`);
-      console.log(`🕒 [Scheduler] Local time: ${scheduledTime.toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' })}`);
+      console.log(`📅 [${scheduledTime.toISOString()}] SCHEDULED JOB PROCESSING STARTED`);
+      console.log(`🕒 [Scheduler] Local time: ${scheduledTime.toLocaleString(LOCALE.frCH, { timeZone: TIMEZONE.Zurich })}`);
 
-      try {
-        await this.alertEngine.processAllAlerts();
-        console.log(`✅ [${new Date().toISOString()}] SCHEDULED JOB PROCESSING COMPLETED SUCCESSFULLY`);
-
-        // Show next run time after completion
-        const nextRunTime = alertTask.nextRun();
-        if (nextRunTime) {
-          console.log(`🕒 [Scheduler] Next job alert run: ${nextRunTime.toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' })}`);
+      // Disabled in development to avoid spamming
+      if (env.NODE_ENV !== ENV.development) {
+        try {
+          const result = await this.jobService.processAllJobs();
+          if (result.success) {
+            console.log(`✅ [${result.endTime.toISOString()}] SCHEDULED JOB PROCESSING COMPLETED SUCCESSFULLY`);
+          } else {
+            console.error(`❌ [${result.endTime.toISOString()}] SCHEDULED JOB PROCESSING FAILED:`, result.error);
+          }
+        } catch (error) {
+          console.error(`❌ [${new Date().toISOString()}] SCHEDULED JOB PROCESSING FAILED:`, error);
         }
-      } catch (error) {
-        console.error(`❌ [${new Date().toISOString()}] SCHEDULED JOB PROCESSING FAILED:`, error);
+      } else {
+        console.log('💤 [Scheduler] Job processing skipped in development mode');
       }
+    }, {
+      scheduled: env.SCHEDULER_ENABLED,
+      timezone: TIMEZONE.Zurich
     });
 
-    console.log('✅ [Scheduler] Alert task created successfully');
-
-    // Health check task - every 30 minutes using Cron
-    const healthTask = new Cron('*/30 * * * *', {
-      timezone: 'Europe/Zurich',
-      paused: false
-    }, () => {
+    // Health check task - every 30 minutes
+    const healthTask = cron.schedule(CRON_SCHEDULE.every30Minutes, () => {
       console.log('💓 Health check - System is running');
       console.log(`📊 Active tasks: ${this.tasks.size}`);
+    }, {
+      scheduled: env.SCHEDULER_ENABLED,
+      timezone: TIMEZONE.Zurich
     });
 
-    // Database cleanup task - daily at 2 AM using Cron
-    const cleanupTask = new Cron('0 2 * * *', {
-      timezone: 'Europe/Zurich',
-      paused: false
-    }, async () => {
+    // Database cleanup task - daily at 2 AM
+    const cleanupTask = cron.schedule(CRON_SCHEDULE.dailyAt2AM, async () => {
       console.log('🧹 Running daily cleanup...');
-      await this.performCleanup();
+      try {
+        const result = await this.jobService.cleanupJobs(90);
+        if (result.success) {
+          console.log(`✅ [${result.endTime.toISOString()}] SCHEDULED CLEANUP COMPLETED SUCCESSFULLY`);
+        } else {
+          console.error(`❌ [${result.endTime.toISOString()}] SCHEDULED CLEANUP FAILED:`, result.error);
+        }
+      } catch (error) {
+        console.error(`❌ [${new Date().toISOString()}] SCHEDULED CLEANUP FAILED:`, error);
+      }
+    }, {
+      scheduled: env.SCHEDULER_ENABLED,
+      timezone: TIMEZONE.Zurich
     });
 
     this.tasks.set('alerts', alertTask);
     this.tasks.set('health', healthTask);
     this.tasks.set('cleanup', cleanupTask);
 
-    // Tasks are already started (paused: false), just log status
-    console.log('🚀 [Scheduler] All tasks are running automatically with Cron');
-    console.log(`✅ [Scheduler] Alert task running: ${alertTask.isRunning()}`);
-    console.log(`✅ [Scheduler] Health task running: ${healthTask.isRunning()}`);
-    console.log(`✅ [Scheduler] Cleanup task running: ${cleanupTask.isRunning()}`);
-
-    console.log('✅ Scheduler service started with 3 tasks:');
+    const status = env.SCHEDULER_ENABLED ? 'enabled' : 'disabled';
+    console.log(`✅ Scheduler service started (${status}) with 3 tasks:`);
     console.log(`   - Job alerts: ${env.SCHEDULER_CRON}`);
     console.log('   - Health check: Every 30 minutes');
     console.log('   - Cleanup: Daily at 2 AM (CET)');
@@ -103,50 +111,60 @@ export class SchedulerService {
   async triggerAlerts(): Promise<void> {
     console.log('🔄 Manually triggering alert processing...');
     try {
-      await this.alertEngine.processAllAlerts();
+      const result = await this.jobService.processAllJobs();
+      if (!result.success && result.error) {
+        throw new Error(result.error);
+      }
     } catch (error) {
       console.error('❌ Manual alert processing failed:', error);
       throw error;
     }
   }
 
-  private async performCleanup(): Promise<void> {
-    try {
-      // This would clean up old job postings and notifications
-      // For now, just log that cleanup would run
-      console.log('🧹 Cleanup tasks would run here:');
-      console.log('   - Remove job postings older than 30 days');
-      console.log('   - Remove notifications older than 90 days');
-      console.log('   - Compact database logs');
-    } catch (error) {
-      console.error('❌ Cleanup failed:', error);
-    }
-  }
-
   getTaskStatus(): Record<string, boolean> {
     const status: Record<string, boolean> = {};
     this.tasks.forEach((task, name) => {
-      status[name] = task.isRunning();
+      // node-cron tasks don't expose running state, assume true if scheduled
+      status[name] = true;
     });
     return status;
   }
 
-  getNextRunTime(): { nextRun: string | null, currentTime: string, cronPattern: string } {
-    try {
-      const cronJob = new Cron(env.SCHEDULER_CRON, { timezone: 'Europe/Zurich' });
-      const nextRunTime = cronJob.nextRun();
-      cronJob.stop();
+  getNextRunTime(): { nextRun: string | null, currentTime: string, cronPattern: string, enabled: boolean } {
+    const now = new Date();
+    const currentTime = now.toLocaleString(LOCALE.frCH, { timeZone: TIMEZONE.Zurich });
 
-      return {
-        nextRun: nextRunTime ? nextRunTime.toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' }) : null,
-        currentTime: new Date().toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' }),
-        cronPattern: env.SCHEDULER_CRON
-      };
-    } catch (error) {
+    if (!env.SCHEDULER_ENABLED) {
       return {
         nextRun: null,
-        currentTime: new Date().toLocaleString('fr-CH', { timeZone: 'Europe/Zurich' }),
-        cronPattern: env.SCHEDULER_CRON + ' (INVALID)'
+        currentTime,
+        cronPattern: env.SCHEDULER_CRON,
+        enabled: false
+      };
+    }
+
+    try {
+      // Parse the cron expression and get next execution time
+      const interval = CronExpressionParser.parse(env.SCHEDULER_CRON, {
+        currentDate: now,
+        tz: TIMEZONE.Zurich
+      });
+
+      const nextRun = interval.next().toDate();
+
+      return {
+        nextRun: nextRun.toLocaleString(LOCALE.frCH, { timeZone: TIMEZONE.Zurich }),
+        currentTime,
+        cronPattern: env.SCHEDULER_CRON,
+        enabled: true
+      };
+    } catch (error) {
+      console.error('Failed to parse cron expression:', error);
+      return {
+        nextRun: null,
+        currentTime,
+        cronPattern: env.SCHEDULER_CRON + ' (INVALID)',
+        enabled: false
       };
     }
   }

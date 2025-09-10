@@ -12,6 +12,7 @@ const envSchema = z.object({
   SERPAPI_API_KEY: z.string(),
   POSTGRES_USER: z.string().default('username'),
   POSTGRES_PASSWORD: z.string().default('password'),
+  SCHEDULER_ENABLED: z.boolean().default(true),
   SCHEDULER_CRON: z.string().default('0 */2 * * *'),
 });
 
