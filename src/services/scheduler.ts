@@ -36,6 +36,7 @@ export class SchedulerService {
       const scheduledTime = new Date();
       console.log(`📅 [${scheduledTime.toISOString()}] SCHEDULED JOB PROCESSING STARTED`);
       console.log(`🕒 [Scheduler] Local time: ${scheduledTime.toLocaleString(LOCALE.frCH, { timeZone: TIMEZONE.Zurich })}`);
+      console.log(`⏰ [Scheduler] Cron pattern: ${env.SCHEDULER_CRON}`);
 
       // Disabled in development to avoid spamming
       if (env.NODE_ENV !== ENV.development) {

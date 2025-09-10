@@ -103,9 +103,9 @@ docker-compose logs -f swizjobsbot
 ```
 📦 swizjobsbot/
 ├── 🤖 src/bot/          # Telegram bot handlers
-├── ⚙️  src/config/       # Environment configuration
+├── 🔧 src/admin/        # Admin server & API endpoints
+├── ⚙️  src/config/      # Environment configuration
 ├── 🗃️ src/database/     # Schema & migrations
-├── 🔧 src/handlers/     # HTTP endpoint handlers
 ├── 🔧 src/services/     # Job scraping & alerts
 ├── 📝 src/types/        # TypeScript definitions
 ├── 🛠️ src/utils/        # Helper functions

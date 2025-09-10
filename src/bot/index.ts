@@ -38,7 +38,7 @@ export class TelegramBot {
   async start() {
     try {
       console.log('🚀 Validating Telegram bot token...');
-      
+
       // Test bot token first
       try {
         const botInfo = await this.bot.telegram.getMe();
@@ -49,12 +49,12 @@ export class TelegramBot {
       }
 
       console.log('🚀 Launching Telegram bot with polling...');
-      
+
       // Use polling mode explicitly (more reliable for VPS)
       const launchPromise = this.bot.launch({
         dropPendingUpdates: true
       });
-      
+
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Bot launch timeout after 30 seconds')), 30000);
       });
