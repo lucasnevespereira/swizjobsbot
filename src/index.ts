@@ -52,7 +52,6 @@ class SwissJobBot {
       }
 
       // Start scheduler
-      console.log('⏰ Starting scheduler...');
       this.scheduler.start();
 
       console.log('');
