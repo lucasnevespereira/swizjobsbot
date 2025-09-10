@@ -44,16 +44,13 @@ class SwissJobBot {
       // Start admin server first (keeps process alive)
       await this.adminServer.start(env.PORT);
 
-      // Start Telegram bot AFTER HTTP server is running
+      // Start Telegram bot in background (non-blocking)
       if (env.NODE_ENV === ENV.production) {
-        try {
-          console.log('🤖 Starting Telegram bot in production mode...');
-          await this.telegramBot.start();
-          console.log('✅ Telegram bot started successfully');
-        } catch (error) {
-          console.error('❌ Failed to start Telegram bot, but admin server is still running:', error);
-          // Don't crash the whole app - admin server stays alive
-        }
+        console.log('🤖 Starting Telegram bot in production mode (background)...');
+        // Start bot in background - don't wait for it
+        this.telegramBot.start().catch((error) => {
+          console.error('❌ Failed to start Telegram bot in background:', error);
+        });
       } else {
         console.log('🤖 Skipping Telegram bot startup in development mode');
       }
