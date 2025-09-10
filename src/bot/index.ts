@@ -39,9 +39,6 @@ export class TelegramBot {
     try {
       await this.bot.launch();
       console.log('🤖 Telegram bot started successfully');
-
-      process.once('SIGINT', () => this.stop());
-      process.once('SIGTERM', () => this.stop());
     } catch (error) {
       console.error('Failed to start bot:', error);
       throw error;
