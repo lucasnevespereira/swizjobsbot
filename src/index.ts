@@ -37,10 +37,6 @@ class SwissJobBot {
     try {
       console.log('Starting SwizJobs Bot...');
 
-      // Start scheduler
-      console.log('⏰ Starting scheduler...');
-      this.scheduler.start();
-
       // Start admin server first (keeps process alive)
       await this.adminServer.start(env.PORT);
 
@@ -54,6 +50,10 @@ class SwissJobBot {
       } else {
         console.log('🤖 Skipping Telegram bot startup in development mode');
       }
+
+      // Start scheduler
+      console.log('⏰ Starting scheduler...');
+      this.scheduler.start();
 
       console.log('');
       console.log('🇨🇭 SwizJobs Bot is now running!');
