@@ -37,10 +37,12 @@ export class TelegramBot {
 
   async start() {
     try {
+      console.log('🚀 Launching Telegram bot...');
       await this.bot.launch();
       console.log('🤖 Telegram bot started successfully');
     } catch (error) {
-      console.error('Failed to start bot:', error);
+      console.error('❌ Failed to start Telegram bot:', error);
+      console.error('❌ Error details:', error instanceof Error ? error.message : 'Unknown error');
       throw error;
     }
   }

@@ -62,11 +62,15 @@ class SwissJobBot {
       console.log('🇨🇭 Starting SwizJobs Bot...');
 
       if (env.NODE_ENV === ENV.production) {
+        console.log('🤖 Starting Telegram bot in production mode...');
         await this.telegramBot.start();
+        console.log('✅ Telegram bot started successfully');
       }
 
       // Start scheduler
+      console.log('⏰ Starting scheduler...');
       this.scheduler.start();
+      console.log('✅ Scheduler started successfully');
 
       // Start HTTP server (keeps process alive)
       this.app.listen(env.PORT, () => {
