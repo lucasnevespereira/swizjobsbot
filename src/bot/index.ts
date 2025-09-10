@@ -37,8 +37,26 @@ export class TelegramBot {
 
   async start() {
     try {
+      console.log('🚀 Validating Telegram bot token...');
+      
+      // Test bot token first
+      try {
+        const botInfo = await this.bot.telegram.getMe();
+        console.log(`✅ Bot token valid. Bot name: ${botInfo.first_name} (@${botInfo.username})`);
+      } catch (tokenError) {
+        console.error('❌ Invalid Telegram bot token:', tokenError);
+        throw new Error('Invalid Telegram bot token');
+      }
+
       console.log('🚀 Launching Telegram bot...');
-      await this.bot.launch();
+      
+      // Add timeout to prevent hanging
+      const launchPromise = this.bot.launch();
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Bot launch timeout after 30 seconds')), 30000);
+      });
+
+      await Promise.race([launchPromise, timeoutPromise]);
       console.log('🤖 Telegram bot started successfully');
     } catch (error) {
       console.error('❌ Failed to start Telegram bot:', error);
