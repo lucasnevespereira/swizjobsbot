@@ -46,7 +46,7 @@ class SwissJobBot {
       // Register webhook with Telegram and mount handler on Express
       console.log('🤖 Setting up Telegram bot webhook...');
       const webhookHandler = await this.telegramBot.createWebhook(env.WEBHOOK_DOMAIN, WEBHOOK_PATH);
-      this.adminServer.use(WEBHOOK_PATH, webhookHandler);
+      this.adminServer.use(webhookHandler);
 
       // Start admin server (keeps process alive + serves webhook)
       await this.adminServer.start(env.PORT);

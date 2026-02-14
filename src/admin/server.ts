@@ -32,10 +32,11 @@ export class AdminServer {
   }
 
   /**
-   * Mount additional middleware on a specific path (used for Telegram webhook).
+   * Mount middleware at the root level (used for Telegram webhook).
+   * Telegraf's webhook handler does its own path matching internally.
    */
-  use(path: string, handler: express.RequestHandler): void {
-    this.app.use(path, handler);
+  use(handler: express.RequestHandler): void {
+    this.app.use(handler);
   }
 
   start(port: number): Promise<void> {
