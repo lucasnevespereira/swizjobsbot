@@ -5,7 +5,6 @@ import { SchedulerService } from './services/scheduler.js';
 import { AdminHandlers } from './admin/handlers.js';
 import { AdminServer } from './admin/server.js';
 import { env } from './config/env.js';
-import { ENV } from './types/enum.js';
 import crypto from 'node:crypto';
 
 // Derive a secret webhook path from the bot token to prevent abuse
@@ -30,7 +29,6 @@ class SwissJobBot {
     this.jobService = new JobService(this.jobScraper, this.telegramBot);
     this.scheduler = new SchedulerService(this.jobService);
 
-    // Initialize admin server with consolidated handlers
     const adminHandlers = new AdminHandlers(this.jobService, this.telegramBot, this.scheduler);
     this.adminServer = new AdminServer(adminHandlers);
 
@@ -41,36 +39,24 @@ class SwissJobBot {
     try {
       console.log('Starting SwizJobs Bot...');
 
-      // In production with WEBHOOK_DOMAIN: use webhooks (mount before server starts)
-      if (env.NODE_ENV === ENV.production && env.WEBHOOK_DOMAIN) {
-        console.log('🤖 Setting up Telegram bot with webhooks...');
-        const webhookHandler = await this.telegramBot.createWebhook(env.WEBHOOK_DOMAIN, WEBHOOK_PATH);
-        this.adminServer.use(WEBHOOK_PATH, webhookHandler);
+      if (!env.WEBHOOK_DOMAIN) {
+        throw new Error('WEBHOOK_DOMAIN environment variable is required. Set it to your Railway public URL (e.g. https://your-app.up.railway.app)');
       }
 
-      // Start admin server (keeps process alive)
+      // Register webhook with Telegram and mount handler on Express
+      console.log('🤖 Setting up Telegram bot webhook...');
+      const webhookHandler = await this.telegramBot.createWebhook(env.WEBHOOK_DOMAIN, WEBHOOK_PATH);
+      this.adminServer.use(WEBHOOK_PATH, webhookHandler);
+
+      // Start admin server (keeps process alive + serves webhook)
       await this.adminServer.start(env.PORT);
-
-      // In production without WEBHOOK_DOMAIN: fall back to polling
-      if (env.NODE_ENV === ENV.production && !env.WEBHOOK_DOMAIN) {
-        console.log('🤖 Starting Telegram bot in polling mode (no WEBHOOK_DOMAIN set)...');
-        this.telegramBot.startPolling().catch((error) => {
-          console.error('❌ Failed to start Telegram bot in polling mode:', error);
-        });
-      } else if (env.NODE_ENV !== ENV.production) {
-        console.log('🤖 Skipping Telegram bot startup in development mode');
-      }
 
       // Start scheduler
       this.scheduler.start();
 
       console.log('');
       console.log('🇨🇭 SwizJobs Bot is now running!');
-      if (env.WEBHOOK_DOMAIN) {
-        console.log(`📱 Telegram bot is receiving updates via webhook`);
-      } else {
-        console.log('📱 Telegram bot is listening for commands');
-      }
+      console.log('📱 Telegram bot is receiving updates via webhook');
       console.log('⏰ Scheduler is running background tasks');
       console.log('');
 
@@ -84,16 +70,8 @@ class SwissJobBot {
     console.log('🛑 Shutting down SwizJobs Bot...');
 
     try {
-      // Stop scheduler
       this.scheduler.stop();
       console.log('✅ Scheduler stopped');
-
-      if (env.NODE_ENV === ENV.production) {
-        // Stop Telegram bot
-        await this.telegramBot.stop();
-        console.log('✅ Telegram bot stopped');
-      }
-
       console.log('✅ SwizJobs Bot shut down successfully');
     } catch (error) {
       console.error('❌ Error during shutdown:', error);
