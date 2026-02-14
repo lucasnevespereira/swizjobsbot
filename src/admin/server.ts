@@ -1,5 +1,5 @@
-import express from 'express';
-import { AdminHandlers } from './handlers.js';
+import express from "express";
+import { AdminHandlers } from "./handlers.js";
 
 export class AdminServer {
   private app: express.Application;
@@ -18,17 +18,17 @@ export class AdminServer {
 
   private setupRoutes(): void {
     // Health check
-    this.app.get('/health', this.adminHandlers.healthCheck);
+    this.app.get("/health", this.adminHandlers.healthCheck);
 
     // Admin routes
-    this.app.post('/admin/test', this.adminHandlers.testScraper);
-    this.app.post('/admin/trigger', this.adminHandlers.triggerUserAlerts);
-    this.app.get('/admin/scheduler', this.adminHandlers.schedulerStatus);
+    this.app.post("/admin/test", this.adminHandlers.testScraper);
+    this.app.post("/admin/trigger", this.adminHandlers.triggerUserAlerts);
+    this.app.get("/admin/scheduler", this.adminHandlers.schedulerStatus);
 
     // Job management routes
-    this.app.get('/jobs/process', this.adminHandlers.processAllJobs);
-    this.app.get('/jobs/status', this.adminHandlers.getJobStatus);
-    this.app.post('/jobs/cleanup', this.adminHandlers.cleanupJobs);
+    this.app.get("/jobs/process", this.adminHandlers.processAllJobs);
+    this.app.get("/jobs/status", this.adminHandlers.getJobStatus);
+    this.app.post("/jobs/cleanup", this.adminHandlers.cleanupJobs);
   }
 
   start(port: number): Promise<void> {

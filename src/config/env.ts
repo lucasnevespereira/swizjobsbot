@@ -13,7 +13,7 @@ const envSchema = z.object({
   POSTGRES_USER: z.string().default('username'),
   POSTGRES_PASSWORD: z.string().default('password'),
   SCHEDULER_ENABLED: z.string().default('true').transform((val) => val === 'true'),
-  SCHEDULER_CRON: z.string().default('0 */2 * * *'),
+  SCHEDULER_CRON: z.string().default('0 8 * * *'),
 });
 
 // Parse and validate

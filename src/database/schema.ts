@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, boolean, integer, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, boolean, integer, jsonb, unique } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -24,7 +24,7 @@ export const jobSearches = pgTable('job_searches', {
 
 export const jobPostings = pgTable('job_postings', {
   id: serial('id').primaryKey(),
-  externalId: text('external_id').notNull(),
+  externalId: text('external_id').notNull().unique(),
   title: text('title').notNull(),
   company: text('company').notNull(),
   location: text('location').notNull(),
@@ -40,7 +40,9 @@ export const userNotifications = pgTable('user_notifications', {
   userId: integer('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   jobPostingId: integer('job_posting_id').notNull().references(() => jobPostings.id, { onDelete: 'cascade' }),
   sentAt: timestamp('sent_at').notNull().defaultNow()
-});
+}, (table) => ({
+  uniqueUserJob: unique().on(table.userId, table.jobPostingId),
+}));
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;

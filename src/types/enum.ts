@@ -19,4 +19,5 @@ export enum CRON_SCHEDULE  {
   every2Hours = '0 */2 * * *',
   every30Minutes = '*/30 * * * *',
   dailyAt2AM = '0 2 * * *',
+  dailyAt8AM = '0 8 * * *',
 }

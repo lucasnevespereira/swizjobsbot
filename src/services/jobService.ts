@@ -1,6 +1,6 @@
 import { db } from '../database/connection.js';
 import { users, jobSearches, jobPostings, userNotifications } from '../database/schema.js';
-import { eq, and, notInArray, lt } from 'drizzle-orm';
+import { eq, and, inArray, lt } from 'drizzle-orm';
 import { JobMatch } from '../types/index.js';
 import { JobScraperService } from './jobScraper.js';
 import { TelegramBot } from '../bot/index.js';
@@ -26,6 +26,18 @@ export interface CleanupResult {
   error?: string;
 }
 
+interface SearchCriteria {
+  key: string;
+  keywords: string[];
+  locations: string[];
+}
+
+interface UserWithSearch {
+  user: typeof users.$inferSelect;
+  search: typeof jobSearches.$inferSelect;
+  criteriaKey: string;
+}
+
 export class JobService {
   public jobScraper: JobScraperService;
   public telegramBot: TelegramBot;
@@ -35,219 +47,270 @@ export class JobService {
     this.telegramBot = telegramBot;
   }
 
+  /**
+   * Build a unique key for a (keywords, locations) combo so we can deduplicate scrapes.
+   */
+  private buildCriteriaKey(keywords: string[], locations: string[]): string {
+    const sortedKw = [...keywords].map(k => k.toLowerCase().trim()).sort().join('|');
+    const sortedLoc = [...locations].map(l => l.toLowerCase().trim()).sort().join('|');
+    return `${sortedKw}::${sortedLoc}`;
+  }
+
+  /**
+   * Main entry point: collect all active searches, scrape once per unique criteria,
+   * then distribute results to matching users.
+   */
   async processAllJobs(): Promise<ProcessResult> {
     const startTime = new Date();
     console.log(`🔄 [${startTime.toISOString()}] ALERT PROCESSING STARTED`);
 
     try {
-      const activeUsers = await db
-        .select()
+      // 1. Get all active users with their active searches in one query
+      const activeSearches = await db
+        .select({ user: users, search: jobSearches })
         .from(users)
-        .where(eq(users.active, true));
+        .innerJoin(jobSearches, eq(users.id, jobSearches.userId))
+        .where(and(eq(users.active, true), eq(jobSearches.active, true)));
 
-      console.log(`👥 [Job Service] Found ${activeUsers.length} active users to process`);
+      if (activeSearches.length === 0) {
+        console.log('📭 No active users with configured searches');
+        return this.buildResult(startTime, true, 0, 0, 0);
+      }
+
+      // 2. Deduplicate search criteria across all users
+      const criteriaMap = new Map<string, SearchCriteria>();
+      const userSearchList: UserWithSearch[] = [];
+
+      for (const { user, search } of activeSearches) {
+        const key = this.buildCriteriaKey(search.keywords, search.locations);
+        if (!criteriaMap.has(key)) {
+          criteriaMap.set(key, { key, keywords: search.keywords, locations: search.locations });
+        }
+        userSearchList.push({ user, search, criteriaKey: key });
+      }
+
+      const uniqueUserCount = new Set(activeSearches.map(s => s.user.id)).size;
+      console.log(`👥 ${uniqueUserCount} active users, ${activeSearches.length} searches, ${criteriaMap.size} unique criteria`);
+
+      // 3. Scrape once per unique criteria
+      const jobsByCriteria = new Map<string, JobMatch[]>();
+      let totalJobsFound = 0;
+
+      for (const [key, criteria] of criteriaMap) {
+        console.log(`🔍 Scraping: "${criteria.keywords.join(', ')}" in [${criteria.locations.join(', ')}]`);
+        const jobs = await this.jobScraper.scrapeAllSources(criteria.keywords, criteria.locations);
+        jobsByCriteria.set(key, jobs);
+        totalJobsFound += jobs.length;
+        console.log(`   Found ${jobs.length} jobs`);
+      }
+
+      // 4. Save all scraped jobs to DB in batch
+      const allJobs = Array.from(jobsByCriteria.values()).flat();
+      await this.saveNewJobs(allJobs);
+
+      // 5. Distribute to each user
+      let totalNotificationsSent = 0;
+      const processedUsers = new Set<number>();
+
+      for (const { user, search, criteriaKey } of userSearchList) {
+        const jobs = jobsByCriteria.get(criteriaKey) || [];
+        if (jobs.length === 0) continue;
+
+        // Filter by this user's maxAgeDays
+        const recentJobs = this.filterRecentJobs(jobs, search.maxAgeDays);
+        if (recentJobs.length === 0) continue;
+
+        // Filter out jobs already sent to this user (correct dedup)
+        const unseenJobs = await this.filterUnseenJobs(recentJobs, user.id);
+        if (unseenJobs.length === 0) {
+          console.log(`✅ [User ${user.telegramChatId}] All ${recentJobs.length} jobs already sent`);
+          continue;
+        }
+
+        console.log(`📱 [User ${user.telegramChatId}] Sending ${unseenJobs.length} new jobs (${recentJobs.length - unseenJobs.length} already seen)`);
+
+        await this.sendJobAlerts(user.telegramChatId, unseenJobs);
+        await this.recordNotifications(user.id, unseenJobs);
+
+        totalNotificationsSent += unseenJobs.length;
+        processedUsers.add(user.id);
+        await this.sleep(1000);
+      }
+
+      return this.buildResult(startTime, true, processedUsers.size, totalJobsFound, totalNotificationsSent);
+    } catch (error) {
+      console.error(`❌ [${new Date().toISOString()}] ALERT PROCESSING FAILED:`, error);
+      return this.buildResult(startTime, false, 0, 0, 0, error);
+    }
+  }
+
+  /**
+   * Process alerts for a single user (used by admin trigger endpoint).
+   */
+  async processUserAlerts(user: any): Promise<{ jobsFound: number; notificationsSent: number }> {
+    try {
+      const searches = await db
+        .select()
+        .from(jobSearches)
+        .where(and(eq(jobSearches.userId, user.id), eq(jobSearches.active, true)));
+
+      if (searches.length === 0) {
+        console.log(`⚠️ [User ${user.telegramChatId}] No active job searches configured`);
+        return { jobsFound: 0, notificationsSent: 0 };
+      }
 
       let totalJobsFound = 0;
       let totalNotificationsSent = 0;
 
-      for (const user of activeUsers) {
-        const userStats = await this.processUserAlerts(user);
-        totalJobsFound += userStats.jobsFound;
-        totalNotificationsSent += userStats.notificationsSent;
-        await this.sleep(1000); // Rate limiting
+      for (const search of searches) {
+        const jobs = await this.jobScraper.scrapeAllSources(search.keywords, search.locations);
+        const recentJobs = this.filterRecentJobs(jobs, search.maxAgeDays);
+        totalJobsFound += recentJobs.length;
+
+        if (recentJobs.length === 0) continue;
+
+        await this.saveNewJobs(recentJobs);
+
+        const unseenJobs = await this.filterUnseenJobs(recentJobs, user.id);
+        if (unseenJobs.length === 0) {
+          console.log(`✅ [User ${user.telegramChatId}] All ${recentJobs.length} jobs already sent`);
+          continue;
+        }
+
+        console.log(`📱 [User ${user.telegramChatId}] Sending ${unseenJobs.length} new jobs`);
+        await this.sendJobAlerts(user.telegramChatId, unseenJobs);
+        await this.recordNotifications(user.id, unseenJobs);
+        totalNotificationsSent += unseenJobs.length;
       }
 
-      const endTime = new Date();
-      const duration = endTime.getTime() - startTime.getTime();
-
-      console.log(`✅ [${endTime.toISOString()}] ALERT PROCESSING COMPLETED SUCCESSFULLY`);
-      console.log(`📊 [Jobs] Duration: ${Math.round(duration / 1000)}s`);
-      console.log(`   👥 Users processed: ${activeUsers.length}`);
-      console.log(`   💼 Total jobs found: ${totalJobsFound}`);
-      console.log(`   📱 Notifications sent: ${totalNotificationsSent}`);
-
-      return {
-        success: true,
-        startTime,
-        endTime,
-        duration,
-        usersProcessed: activeUsers.length,
-        jobsFound: totalJobsFound,
-        notificationsSent: totalNotificationsSent
-      };
-
+      return { jobsFound: totalJobsFound, notificationsSent: totalNotificationsSent };
     } catch (error) {
-      const endTime = new Date();
-      const duration = endTime.getTime() - startTime.getTime();
-
-      console.error(`❌ [${endTime.toISOString()}] ALERT PROCESSING FAILED:`, error);
-      console.log(`📊 [Jobs] Failed after: ${Math.round(duration / 1000)}s`);
-
-      return {
-        success: false,
-        startTime,
-        endTime,
-        duration,
-        usersProcessed: 0,
-        jobsFound: 0,
-        notificationsSent: 0,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
+      console.error(`❌ [User ${user.telegramChatId}] Error:`, error);
+      return { jobsFound: 0, notificationsSent: 0 };
     }
   }
 
-  // Keep the old method for backward compatibility
+  // Backward compatibility for admin handler
   async processAllAlerts(): Promise<void> {
     await this.processAllJobs();
   }
 
-  async processUserAlerts(user: any): Promise<{jobsFound: number, notificationsSent: number}> {
-    try {
-      const userSearches = await db
-        .select()
-        .from(jobSearches)
-        .where(and(
-          eq(jobSearches.userId, user.id),
-          eq(jobSearches.active, true)
-        ));
-
-      if (userSearches.length === 0) {
-        console.log(`⚠️  [User ${user.telegramChatId}] No active job searches configured`);
-        return { jobsFound: 0, notificationsSent: 0 };
-      }
-
-      console.log(`🔍 [User ${user.telegramChatId}] Processing ${userSearches.length} job search(es)`);
-
-      let userJobsFound = 0;
-      let userNotificationsSent = 0;
-
-      for (const search of userSearches) {
-        const searchStats = await this.processJobSearch(user, search);
-        userJobsFound += searchStats.jobsFound;
-        userNotificationsSent += searchStats.notificationsSent;
-      }
-
-      if (userNotificationsSent > 0) {
-        console.log(`📱 [User ${user.telegramChatId}] Sent ${userNotificationsSent} notifications`);
-      }
-
-      return { jobsFound: userJobsFound, notificationsSent: userNotificationsSent };
-    } catch (error) {
-      console.error(`❌ [User ${user.telegramChatId}] Error processing alerts:`, error);
-      return { jobsFound: 0, notificationsSent: 0 };
-    }
+  /**
+   * Keep only jobs posted within the last maxAgeDays.
+   */
+  private filterRecentJobs(jobs: JobMatch[], maxAgeDays: number): JobMatch[] {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - maxAgeDays);
+    return jobs.filter(job => job.postedDate >= cutoff);
   }
 
-  private async processJobSearch(user: any, search: any): Promise<{jobsFound: number, notificationsSent: number}> {
-    try {
-      const searchCriteria = `"${search.keywords.join(', ')}" in [${search.locations.join(', ')}]`;
-      console.log(`🔍 [User ${user.telegramChatId}] Searching: ${searchCriteria}`);
-
-      const scrapeStart = Date.now();
-      const jobs = await this.jobScraper.scrapeAllSources(search.keywords, search.locations);
-      const scrapeDuration = Date.now() - scrapeStart;
-
-      console.log(`📊 [User ${user.telegramChatId}] Scraping completed in ${Math.round(scrapeDuration/1000)}s - Found ${jobs.length} total jobs`);
-
-      const newJobs = await this.filterNewJobs(jobs, search.maxAgeDays);
-      console.log(`📅 [User ${user.telegramChatId}] ${newJobs.length} jobs within ${search.maxAgeDays} day(s)`);
-
-      if (newJobs.length === 0) {
-        console.log(`📭 [User ${user.telegramChatId}] No recent jobs found`);
-        return { jobsFound: 0, notificationsSent: 0 };
-      }
-
-      const unseenJobs = await this.filterUnseenJobs(newJobs, user.id);
-      console.log(`👁️  [User ${user.telegramChatId}] ${unseenJobs.length} unseen jobs (${newJobs.length - unseenJobs.length} already seen)`);
-
-      if (unseenJobs.length === 0) {
-        console.log(`✅ [User ${user.telegramChatId}] All jobs already notified`);
-        return { jobsFound: newJobs.length, notificationsSent: 0 };
-      }
-
-      await this.saveNewJobs(unseenJobs);
-      await this.sendJobAlerts(user.telegramChatId, unseenJobs);
-      await this.recordNotifications(user.id, unseenJobs);
-
-      console.log(`🎯 [User ${user.telegramChatId}] Successfully sent ${unseenJobs.length} job alerts for criteria: ${searchCriteria}`);
-
-      // Log job details for debugging
-      unseenJobs.forEach((job, index) => {
-        console.log(`   ${index + 1}. "${job.title}" at ${job.company} (${job.location}) - ${job.source}`);
-      });
-
-      return { jobsFound: newJobs.length, notificationsSent: unseenJobs.length };
-    } catch (error) {
-      console.error(`❌ [User ${user.telegramChatId}] Error processing job search for "${search.keywords.join(', ')}":`, error);
-      return { jobsFound: 0, notificationsSent: 0 };
-    }
-  }
-
-  private async filterNewJobs(jobs: JobMatch[], maxAgeDays: number): Promise<JobMatch[]> {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - maxAgeDays);
-
-    return jobs.filter(job => job.postedDate >= cutoffDate);
-  }
-
+  /**
+   * FIXED dedup: single batch query to find which jobs in the batch
+   * have already been sent to this user.
+   *
+   * Old code used notInArray (inverted logic) + N individual queries.
+   * New code: one query with inArray on the current batch's externalIds.
+   */
   private async filterUnseenJobs(jobs: JobMatch[], userId: number): Promise<JobMatch[]> {
     if (jobs.length === 0) return [];
 
-    const seenJobIds = await db
-      .select({ jobPostingId: userNotifications.jobPostingId })
+    const externalIds = jobs.map(j => j.id);
+
+    // Single query: which externalIds in this batch were already sent to this user?
+    const alreadySent = await db
+      .select({ externalId: jobPostings.externalId })
       .from(userNotifications)
       .innerJoin(jobPostings, eq(userNotifications.jobPostingId, jobPostings.id))
       .where(
         and(
           eq(userNotifications.userId, userId),
-          notInArray(jobPostings.externalId, jobs.map(j => j.id))
+          inArray(jobPostings.externalId, externalIds)
         )
       );
 
-    const seenIds = new Set(seenJobIds.map(s => s.jobPostingId));
-
-    const unseenJobs: JobMatch[] = [];
-
-    for (const job of jobs) {
-      const existingJob = await db
-        .select()
-        .from(jobPostings)
-        .where(eq(jobPostings.externalId, job.id))
-        .limit(1);
-
-      if (existingJob.length === 0 || !seenIds.has(existingJob[0]!.id)) {
-        unseenJobs.push(job);
-      }
-    }
-
-    return unseenJobs;
+    const sentIds = new Set(alreadySent.map(r => r.externalId));
+    return jobs.filter(job => !sentIds.has(job.id));
   }
 
+  /**
+   * Batch save new jobs. One query to check existing, one batch insert for new ones.
+   * Replaces the old N+1 pattern (1 SELECT + 1 INSERT per job).
+   */
   private async saveNewJobs(jobs: JobMatch[]): Promise<void> {
-    for (const job of jobs) {
-      try {
-        const existing = await db
-          .select()
-          .from(jobPostings)
-          .where(eq(jobPostings.externalId, job.id))
-          .limit(1);
+    if (jobs.length === 0) return;
 
-        if (existing.length === 0) {
-          await db.insert(jobPostings).values({
-            externalId: job.id,
-            title: job.title,
-            company: job.company,
-            location: job.location,
-            url: job.url,
-            description: job.description || null,
-            postedDate: job.postedDate,
-            source: job.source
-          });
-        }
-      } catch (error) {
-        console.error(`❌ Error saving job ${job.id}:`, error);
+    // Deduplicate within the batch by externalId
+    const uniqueJobs = new Map<string, JobMatch>();
+    for (const job of jobs) {
+      if (!uniqueJobs.has(job.id)) {
+        uniqueJobs.set(job.id, job);
       }
     }
+    const deduped = Array.from(uniqueJobs.values());
+
+    const externalIds = deduped.map(j => j.id);
+
+    // Batch check which jobs already exist
+    const existing = await db
+      .select({ externalId: jobPostings.externalId })
+      .from(jobPostings)
+      .where(inArray(jobPostings.externalId, externalIds));
+
+    const existingIds = new Set(existing.map(r => r.externalId));
+    const newJobs = deduped.filter(j => !existingIds.has(j.id));
+
+    if (newJobs.length === 0) return;
+
+    // Batch insert with ON CONFLICT safety net (requires UNIQUE on externalId)
+    await db
+      .insert(jobPostings)
+      .values(
+        newJobs.map(job => ({
+          externalId: job.id,
+          title: job.title,
+          company: job.company,
+          location: job.location,
+          url: job.url,
+          description: job.description || null,
+          postedDate: job.postedDate,
+          source: job.source,
+        }))
+      )
+      .onConflictDoNothing();
+
+    console.log(`💾 Saved ${newJobs.length} new jobs to DB`);
+  }
+
+  /**
+   * Batch record that these jobs were sent to this user.
+   * One query to look up IDs, one batch insert.
+   * Replaces the old N+1 pattern.
+   */
+  private async recordNotifications(userId: number, jobs: JobMatch[]): Promise<void> {
+    if (jobs.length === 0) return;
+
+    const externalIds = jobs.map(j => j.id);
+
+    // Batch lookup job posting DB IDs
+    const jobRecords = await db
+      .select({ id: jobPostings.id, externalId: jobPostings.externalId })
+      .from(jobPostings)
+      .where(inArray(jobPostings.externalId, externalIds));
+
+    const idMap = new Map(jobRecords.map(r => [r.externalId, r.id]));
+
+    const values = jobs
+      .map(job => {
+        const jobPostingId = idMap.get(job.id);
+        if (!jobPostingId) return null;
+        return { userId, jobPostingId };
+      })
+      .filter((v): v is { userId: number; jobPostingId: number } => v !== null);
+
+    if (values.length === 0) return;
+
+    // Batch insert with ON CONFLICT safety net (requires UNIQUE on userId+jobPostingId)
+    await db.insert(userNotifications).values(values).onConflictDoNothing();
   }
 
   private async sendJobAlerts(chatId: string, jobs: JobMatch[]): Promise<void> {
@@ -255,9 +318,9 @@ export class JobService {
       try {
         const message = this.formatJobMessage(job);
         await this.telegramBot.sendMessage(chatId, message, { parse_mode: 'HTML' });
-        await this.sleep(500); // Rate limiting
+        await this.sleep(500);
       } catch (error) {
-        console.error(`❌ Error sending job alert:`, error);
+        console.error(`❌ Error sending alert to ${chatId}:`, error);
       }
     }
   }
@@ -276,27 +339,6 @@ export class JobService {
 <i>Tapez /pause pour arrêter les alertes</i>`;
   }
 
-  private async recordNotifications(userId: number, jobs: JobMatch[]): Promise<void> {
-    for (const job of jobs) {
-      try {
-        const jobRecord = await db
-          .select()
-          .from(jobPostings)
-          .where(eq(jobPostings.externalId, job.id))
-          .limit(1);
-
-        if (jobRecord.length > 0) {
-          await db.insert(userNotifications).values({
-            userId: userId,
-            jobPostingId: jobRecord[0]!.id
-          });
-        }
-      } catch (error) {
-        console.error(`❌ Error recording notification:`, error);
-      }
-    }
-  }
-
   async cleanupJobs(retentionDays: number = 90): Promise<CleanupResult> {
     const startTime = new Date();
     console.log(`🧹 [${startTime.toISOString()}] DATABASE CLEANUP STARTED`);
@@ -305,7 +347,6 @@ export class JobService {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
 
-      // Delete old job postings (cascades to user_notifications)
       const deletedJobs = await db
         .delete(jobPostings)
         .where(lt(jobPostings.createdAt, cutoffDate))
@@ -314,25 +355,14 @@ export class JobService {
       const endTime = new Date();
       const duration = endTime.getTime() - startTime.getTime();
 
-      console.log(`✅ [${endTime.toISOString()}] DATABASE CLEANUP COMPLETED`);
-      console.log(`📊 [Cleanup] Deleted ${deletedJobs.length} jobs older than ${retentionDays} days`);
-      console.log(`📊 [Cleanup] Duration: ${Math.round(duration / 1000)}s`);
+      console.log(`✅ [Cleanup] Deleted ${deletedJobs.length} jobs older than ${retentionDays} days in ${Math.round(duration / 1000)}s`);
 
-      return {
-        success: true,
-        startTime,
-        endTime,
-        duration,
-        deletedJobsCount: deletedJobs.length,
-        cutoffDate
-      };
-
+      return { success: true, startTime, endTime, duration, deletedJobsCount: deletedJobs.length, cutoffDate };
     } catch (error) {
       const endTime = new Date();
       const duration = endTime.getTime() - startTime.getTime();
 
-      console.error(`❌ [${endTime.toISOString()}] DATABASE CLEANUP FAILED:`, error);
-      console.log(`📊 [Cleanup] Failed after: ${Math.round(duration / 1000)}s`);
+      console.error(`❌ [Cleanup] Failed:`, error);
 
       return {
         success: false,
@@ -344,6 +374,33 @@ export class JobService {
         error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
+  }
+
+  private buildResult(
+    startTime: Date,
+    success: boolean,
+    usersProcessed: number,
+    jobsFound: number,
+    notificationsSent: number,
+    error?: unknown
+  ): ProcessResult {
+    const endTime = new Date();
+    const duration = endTime.getTime() - startTime.getTime();
+    const level = success ? '✅' : '❌';
+
+    console.log(`${level} [${endTime.toISOString()}] ALERT PROCESSING ${success ? 'COMPLETED' : 'FAILED'}`);
+    console.log(`📊 Duration: ${Math.round(duration / 1000)}s | Users: ${usersProcessed} | Jobs: ${jobsFound} | Sent: ${notificationsSent}`);
+
+    return {
+      success,
+      startTime,
+      endTime,
+      duration,
+      usersProcessed,
+      jobsFound,
+      notificationsSent,
+      ...(error ? { error: error instanceof Error ? error.message : 'Unknown error' } : {})
+    };
   }
 
   private sleep(ms: number): Promise<void> {
