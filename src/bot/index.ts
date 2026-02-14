@@ -35,14 +35,30 @@ export class TelegramBot {
     });
   }
 
-  async start() {
+  /**
+   * Start bot in polling mode (for local development only).
+   */
+  async startPolling() {
     try {
       await this.bot.launch();
-      console.log('🤖 Telegram bot started successfully');
+      console.log('🤖 Telegram bot started in polling mode');
     } catch (error) {
       console.error('❌ Failed to start bot:', error);
       throw error;
     }
+  }
+
+  /**
+   * Create a webhook handler and register it with Telegram.
+   * Returns Express-compatible middleware to mount on your server.
+   */
+  async createWebhook(domain: string, path: string) {
+    const webhook = await this.bot.createWebhook({
+      domain,
+      path,
+    });
+    console.log(`🤖 Telegram bot webhook registered at ${domain}${path}`);
+    return webhook;
   }
 
   async stop() {

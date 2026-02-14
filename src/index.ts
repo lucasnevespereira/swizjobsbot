@@ -6,6 +6,10 @@ import { AdminHandlers } from './admin/handlers.js';
 import { AdminServer } from './admin/server.js';
 import { env } from './config/env.js';
 import { ENV } from './types/enum.js';
+import crypto from 'node:crypto';
+
+// Derive a secret webhook path from the bot token to prevent abuse
+const WEBHOOK_PATH = `/webhook/${crypto.createHash('sha256').update(env.TELEGRAM_BOT_TOKEN).digest('hex').slice(0, 16)}`;
 
 class SwissJobBot {
   private telegramBot!: TelegramBot;
@@ -37,17 +41,23 @@ class SwissJobBot {
     try {
       console.log('Starting SwizJobs Bot...');
 
-      // Start admin server first (keeps process alive)
+      // In production with WEBHOOK_DOMAIN: use webhooks (mount before server starts)
+      if (env.NODE_ENV === ENV.production && env.WEBHOOK_DOMAIN) {
+        console.log('🤖 Setting up Telegram bot with webhooks...');
+        const webhookHandler = await this.telegramBot.createWebhook(env.WEBHOOK_DOMAIN, WEBHOOK_PATH);
+        this.adminServer.use(WEBHOOK_PATH, webhookHandler);
+      }
+
+      // Start admin server (keeps process alive)
       await this.adminServer.start(env.PORT);
 
-      // Start Telegram bot in background (non-blocking)
-      if (env.NODE_ENV === ENV.production) {
-        console.log('🤖 Starting Telegram bot in production mode (background)...');
-        // Start bot in background - don't wait for it
-        this.telegramBot.start().catch((error) => {
-          console.error('❌ Failed to start Telegram bot in background:', error);
+      // In production without WEBHOOK_DOMAIN: fall back to polling
+      if (env.NODE_ENV === ENV.production && !env.WEBHOOK_DOMAIN) {
+        console.log('🤖 Starting Telegram bot in polling mode (no WEBHOOK_DOMAIN set)...');
+        this.telegramBot.startPolling().catch((error) => {
+          console.error('❌ Failed to start Telegram bot in polling mode:', error);
         });
-      } else {
+      } else if (env.NODE_ENV !== ENV.production) {
         console.log('🤖 Skipping Telegram bot startup in development mode');
       }
 
@@ -56,7 +66,11 @@ class SwissJobBot {
 
       console.log('');
       console.log('🇨🇭 SwizJobs Bot is now running!');
-      console.log('📱 Telegram bot is listening for commands');
+      if (env.WEBHOOK_DOMAIN) {
+        console.log(`📱 Telegram bot is receiving updates via webhook`);
+      } else {
+        console.log('📱 Telegram bot is listening for commands');
+      }
       console.log('⏰ Scheduler is running background tasks');
       console.log('');
 

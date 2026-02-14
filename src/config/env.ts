@@ -14,6 +14,7 @@ const envSchema = z.object({
   POSTGRES_PASSWORD: z.string().default('password'),
   SCHEDULER_ENABLED: z.string().default('true').transform((val) => val === 'true'),
   SCHEDULER_CRON: z.string().default('0 8 * * *'),
+  WEBHOOK_DOMAIN: z.string().optional(),
 });
 
 // Parse and validate

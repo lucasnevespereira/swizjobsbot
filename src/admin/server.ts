@@ -31,6 +31,13 @@ export class AdminServer {
     this.app.post("/jobs/cleanup", this.adminHandlers.cleanupJobs);
   }
 
+  /**
+   * Mount additional middleware on a specific path (used for Telegram webhook).
+   */
+  use(path: string, handler: express.RequestHandler): void {
+    this.app.use(path, handler);
+  }
+
   start(port: number): Promise<void> {
     return new Promise((resolve) => {
       this.app.listen(port, () => {
