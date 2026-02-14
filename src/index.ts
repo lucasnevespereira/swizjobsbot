@@ -1,14 +1,14 @@
-import { TelegramBot } from './bot/index.js';
-import { JobScraperService } from './services/jobScraper.js';
-import { JobService } from './services/jobService.js';
-import { SchedulerService } from './services/scheduler.js';
-import { AdminHandlers } from './admin/handlers.js';
-import { AdminServer } from './admin/server.js';
-import { env } from './config/env.js';
-import crypto from 'node:crypto';
+import { TelegramBot } from "./bot/index.js";
+import { JobScraperService } from "./services/jobScraper.js";
+import { JobService } from "./services/jobService.js";
+import { SchedulerService } from "./services/scheduler.js";
+import { AdminHandlers } from "./admin/handlers.js";
+import { AdminServer } from "./admin/server.js";
+import { env } from "./config/env.js";
+import crypto from "node:crypto";
 
 // Derive a secret webhook path from the bot token to prevent abuse
-const WEBHOOK_PATH = `/webhook/${crypto.createHash('sha256').update(env.TELEGRAM_BOT_TOKEN).digest('hex').slice(0, 16)}`;
+const WEBHOOK_PATH = `/webhook/${crypto.createHash("sha256").update(env.TELEGRAM_BOT_TOKEN).digest("hex").slice(0, 16)}`;
 
 class SwissJobBot {
   private telegramBot!: TelegramBot;
@@ -22,30 +22,39 @@ class SwissJobBot {
   }
 
   private initializeServices(): void {
-    console.log('🚀 Initializing SwizJobs Bot services...');
+    console.log("🚀 Initializing SwizJobs Bot services...");
 
     this.telegramBot = new TelegramBot(env.TELEGRAM_BOT_TOKEN);
     this.jobScraper = new JobScraperService(env.SERPAPI_API_KEY);
     this.jobService = new JobService(this.jobScraper, this.telegramBot);
     this.scheduler = new SchedulerService(this.jobService);
 
-    const adminHandlers = new AdminHandlers(this.jobService, this.telegramBot, this.scheduler);
+    const adminHandlers = new AdminHandlers(
+      this.jobService,
+      this.telegramBot,
+      this.scheduler,
+    );
     this.adminServer = new AdminServer(adminHandlers);
 
-    console.log('✅ All services initialized');
+    console.log("✅ All services initialized");
   }
 
   async start(): Promise<void> {
     try {
-      console.log('Starting SwizJobs Bot...');
+      console.log("Starting SwizJobs Bot...");
 
       if (!env.WEBHOOK_DOMAIN) {
-        throw new Error('WEBHOOK_DOMAIN environment variable is required. Set it to your Railway public URL (e.g. https://your-app.up.railway.app)');
+        throw new Error(
+          "WEBHOOK_DOMAIN environment variable is required. Set it to your Railway public URL (e.g. https://your-app.up.railway.app)",
+        );
       }
 
       // Register webhook with Telegram and mount handler on Express
-      console.log('🤖 Setting up Telegram bot webhook...');
-      const webhookHandler = await this.telegramBot.createWebhook(env.WEBHOOK_DOMAIN, WEBHOOK_PATH);
+      console.log("🤖 Setting up Telegram bot webhook...");
+      const webhookHandler = await this.telegramBot.createWebhook(
+        env.WEBHOOK_DOMAIN,
+        WEBHOOK_PATH,
+      );
       this.adminServer.use(webhookHandler);
 
       // Start admin server (keeps process alive + serves webhook)
@@ -54,27 +63,26 @@ class SwissJobBot {
       // Start scheduler
       this.scheduler.start();
 
-      console.log('');
-      console.log('🇨🇭 SwizJobs Bot is now running!');
-      console.log('📱 Telegram bot is receiving updates via webhook');
-      console.log('⏰ Scheduler is running background tasks');
-      console.log('');
-
+      console.log("");
+      console.log("🇨🇭 SwizJobs Bot is now running!");
+      console.log("📱 Telegram bot is receiving updates via webhook");
+      console.log("⏰ Scheduler is running background tasks");
+      console.log("");
     } catch (error) {
-      console.error('❌ Failed to start SwizJobs Bot:', error);
+      console.error("❌ Failed to start SwizJobs Bot:", error);
       process.exit(1);
     }
   }
 
   async stop(): Promise<void> {
-    console.log('🛑 Shutting down SwizJobs Bot...');
+    console.log("🛑 Shutting down SwizJobs Bot...");
 
     try {
       this.scheduler.stop();
-      console.log('✅ Scheduler stopped');
-      console.log('✅ SwizJobs Bot shut down successfully');
+      console.log("✅ Scheduler stopped");
+      console.log("✅ SwizJobs Bot shut down successfully");
     } catch (error) {
-      console.error('❌ Error during shutdown:', error);
+      console.error("❌ Error during shutdown:", error);
     }
   }
 }
@@ -83,20 +91,20 @@ class SwissJobBot {
 const app = new SwissJobBot();
 
 // Handle graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('\n🔄 Received SIGINT, shutting down gracefully...');
+process.on("SIGINT", async () => {
+  console.log("\n🔄 Received SIGINT, shutting down gracefully...");
   await app.stop();
   process.exit(0);
 });
 
-process.on('SIGTERM', async () => {
-  console.log('\n🔄 Received SIGTERM, shutting down gracefully...');
+process.on("SIGTERM", async () => {
+  console.log("\n🔄 Received SIGTERM, shutting down gracefully...");
   await app.stop();
   process.exit(0);
 });
 
 // Start the application
-app.start().catch(error => {
-  console.error('💥 Fatal error:', error);
+app.start().catch((error) => {
+  console.error("💥 Fatal error:", error);
   process.exit(1);
 });

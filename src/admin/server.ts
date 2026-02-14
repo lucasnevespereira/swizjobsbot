@@ -17,7 +17,7 @@ export class AdminServer {
   }
 
   private setupRoutes(): void {
-    // Health check
+    this.app.get("/", this.adminHandlers.healthCheck);
     this.app.get("/health", this.adminHandlers.healthCheck);
 
     // Admin routes
