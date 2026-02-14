@@ -14,11 +14,12 @@ export class JobScraperService {
 
       for (const keyword of keywords) {
         for (const location of locations) {
-          let start = 0;
+          let nextPageToken: string | undefined = undefined;
+          let page = 0;
 
           // Paginate through results (up to 3 pages)
-          while (start < 30) {
-            const response = await getJson({
+          while (page < 3) {
+            const params: Record<string, any> = {
               engine: "google_jobs",
               q: keyword,
               location,
@@ -26,8 +27,13 @@ export class JobScraperService {
               hl: "fr",
               chips: "date_posted:week",
               api_key: this.serpApiKey,
-              start,
-            });
+            };
+
+            if (nextPageToken) {
+              params.next_page_token = nextPageToken;
+            }
+
+            const response = await getJson(params);
 
             if (!response.jobs_results || response.jobs_results.length === 0) break;
 
@@ -46,7 +52,9 @@ export class JobScraperService {
               });
             }
 
-            start += 10;
+            nextPageToken = response.serpapi_pagination?.next_page_token;
+            if (!nextPageToken) break;
+            page++;
           }
         }
       }
