@@ -116,9 +116,15 @@ export class JobService {
         const jobs = jobsByCriteria.get(criteriaKey) || [];
         if (jobs.length === 0) continue;
 
+        // Filter by relevance (title/description must match at least one keyword)
+        const relevantJobs = this.filterRelevantJobs(jobs, search.keywords);
+
         // Filter by this user's maxAgeDays
-        const recentJobs = this.filterRecentJobs(jobs, search.maxAgeDays);
-        if (recentJobs.length === 0) continue;
+        const recentJobs = this.filterRecentJobs(relevantJobs, search.maxAgeDays);
+        if (recentJobs.length === 0) {
+          console.log(`📭 [User ${user.telegramChatId}] ${jobs.length} scraped → ${relevantJobs.length} relevant → 0 recent`);
+          continue;
+        }
 
         // Filter out jobs already sent to this user (correct dedup)
         const unseenJobs = await this.filterUnseenJobs(recentJobs, user.id);
@@ -127,7 +133,7 @@ export class JobService {
           continue;
         }
 
-        console.log(`📱 [User ${user.telegramChatId}] Sending ${unseenJobs.length} new jobs (${recentJobs.length - unseenJobs.length} already seen)`);
+        console.log(`📱 [User ${user.telegramChatId}] ${jobs.length} scraped → ${relevantJobs.length} relevant → ${unseenJobs.length} new`);
 
         await this.sendJobAlerts(user.telegramChatId, unseenJobs);
         await this.recordNotifications(user.id, unseenJobs);
@@ -164,7 +170,8 @@ export class JobService {
 
       for (const search of searches) {
         const jobs = await this.jobScraper.scrapeAllSources(search.keywords, search.locations);
-        const recentJobs = this.filterRecentJobs(jobs, search.maxAgeDays);
+        const relevantJobs = this.filterRelevantJobs(jobs, search.keywords);
+        const recentJobs = this.filterRecentJobs(relevantJobs, search.maxAgeDays);
         totalJobsFound += recentJobs.length;
 
         if (recentJobs.length === 0) continue;
@@ -177,7 +184,7 @@ export class JobService {
           continue;
         }
 
-        console.log(`📱 [User ${user.telegramChatId}] Sending ${unseenJobs.length} new jobs`);
+        console.log(`📱 [User ${user.telegramChatId}] ${jobs.length} scraped → ${relevantJobs.length} relevant → ${unseenJobs.length} new`);
         await this.sendJobAlerts(user.telegramChatId, unseenJobs);
         await this.recordNotifications(user.id, unseenJobs);
         totalNotificationsSent += unseenJobs.length;
@@ -202,6 +209,22 @@ export class JobService {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - maxAgeDays);
     return jobs.filter(job => job.postedDate >= cutoff);
+  }
+
+  /**
+   * Keep only jobs where the title or description matches at least one keyword.
+   * Uses accent-insensitive matching so "recrutement" matches "Recrutement", etc.
+   */
+  private filterRelevantJobs(jobs: JobMatch[], keywords: string[]): JobMatch[] {
+    const normalize = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const normalizedKeywords = keywords.map(normalize);
+
+    return jobs.filter(job => {
+      const title = normalize(job.title);
+      const description = normalize(job.description || '');
+
+      return normalizedKeywords.some(kw => title.includes(kw) || description.includes(kw));
+    });
   }
 
   /**
