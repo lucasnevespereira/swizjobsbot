@@ -22,12 +22,12 @@ COPY . .
 # Build TypeScript
 RUN npm run build
 
-# Expose port (for health checks)
-EXPOSE 3000
+# Expose port
+EXPOSE ${PORT:-3000}
 
-# Health check
+# Health check (uses PORT env var set by Railway, defaults to 3000)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
+    CMD curl -f http://localhost:${PORT:-3000}/health || exit 1
 
 # Start the application
 CMD ["npm", "start"]

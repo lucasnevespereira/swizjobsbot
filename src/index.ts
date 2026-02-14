@@ -5,6 +5,8 @@ import { SchedulerService } from "./services/scheduler.js";
 import { AdminHandlers } from "./admin/handlers.js";
 import { AdminServer } from "./admin/server.js";
 import { env } from "./config/env.js";
+import { db, client } from "./database/connection.js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 import crypto from "node:crypto";
 
 // Derive a secret webhook path from the bot token to prevent abuse
@@ -42,6 +44,11 @@ class SwissJobBot {
   async start(): Promise<void> {
     try {
       console.log("Starting SwizJobs Bot...");
+
+      // Run database migrations
+      console.log("🗄️  Running database migrations...");
+      await migrate(db, { migrationsFolder: "./src/database/migrations" });
+      console.log("✅ Database migrations complete");
 
       if (!env.WEBHOOK_DOMAIN) {
         throw new Error(
