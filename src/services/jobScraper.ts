@@ -14,15 +14,17 @@ export class JobScraperService {
 
       for (const keyword of keywords) {
         for (const location of locations) {
-          const searchQuery = `${keyword} jobs in ${location}`;
           let start = 0;
 
           // Paginate through results (up to 3 pages)
-          while (start < 60) {
+          while (start < 30) {
             const response = await getJson({
               engine: "google_jobs",
-              q: searchQuery,
+              q: keyword,
+              location,
+              gl: "ch",
               hl: "fr",
+              chips: "date_posted:week",
               api_key: this.serpApiKey,
               start,
             });
@@ -30,7 +32,7 @@ export class JobScraperService {
             if (!response.jobs_results || response.jobs_results.length === 0) break;
 
             for (const job of response.jobs_results) {
-              if (!job.job_id) continue; // Skip jobs without a stable ID
+              if (!job.job_id) continue;
 
               jobs.push({
                 id: job.job_id,
@@ -82,7 +84,6 @@ export class JobScraperService {
       console.error(`❌ [Scraper ${searchId}] Google Jobs scraping failed:`, googleResult.error);
     }
 
-    // Remove duplicates
     const beforeDedup = allJobs.length;
     const uniqueJobs = this.deduplicateJobs(allJobs);
     const duration = Date.now() - startTime;
