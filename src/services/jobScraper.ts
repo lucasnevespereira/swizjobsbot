@@ -8,27 +8,32 @@ export class JobScraperService {
     this.serpApiKey = serpApiKey;
   }
 
-
   async scrapeJobsFromGoogle(keywords: string[], locations: string[]): Promise<ScrapingResult> {
     try {
       const jobs: JobMatch[] = [];
 
       for (const keyword of keywords) {
         for (const location of locations) {
-          const searchQuery = `${keyword} jobs in ${location} Switzerland`;
+          const searchQuery = `${keyword} jobs in ${location}`;
+          let start = 0;
 
-          const response = await getJson({
-            engine: "google_jobs",
-            q: searchQuery,
-            hl: "fr",
-            api_key: this.serpApiKey,
-            num: 20
-          });
+          // Paginate through results (up to 3 pages)
+          while (start < 60) {
+            const response = await getJson({
+              engine: "google_jobs",
+              q: searchQuery,
+              hl: "fr",
+              api_key: this.serpApiKey,
+              start,
+            });
 
-          if (response.jobs_results) {
-            response.jobs_results.forEach((job: any) => {
+            if (!response.jobs_results || response.jobs_results.length === 0) break;
+
+            for (const job of response.jobs_results) {
+              if (!job.job_id) continue; // Skip jobs without a stable ID
+
               jobs.push({
-                id: job.job_id || job.link,
+                id: job.job_id,
                 title: job.title,
                 company: job.company_name,
                 location: job.location,
@@ -37,7 +42,9 @@ export class JobScraperService {
                 postedDate: this.parseGoogleDate(job.detected_extensions?.posted_at),
                 source: 'google' as const
               });
-            });
+            }
+
+            start += 10;
           }
         }
       }
@@ -122,19 +129,24 @@ export class JobScraperService {
     const now = new Date();
     const lowerDate = dateStr.toLowerCase();
 
-    if (lowerDate.includes('hour')) {
+    if (lowerDate.includes('hour') || lowerDate.includes('heure')) {
       const hours = parseInt(lowerDate.match(/(\d+)/)?.[1] || '1');
       return new Date(now.getTime() - hours * 60 * 60 * 1000);
     }
 
-    if (lowerDate.includes('day')) {
+    if (lowerDate.includes('day') || lowerDate.includes('jour')) {
       const days = parseInt(lowerDate.match(/(\d+)/)?.[1] || '1');
       return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
     }
 
-    if (lowerDate.includes('week')) {
+    if (lowerDate.includes('week') || lowerDate.includes('semaine')) {
       const weeks = parseInt(lowerDate.match(/(\d+)/)?.[1] || '1');
       return new Date(now.getTime() - weeks * 7 * 24 * 60 * 60 * 1000);
+    }
+
+    if (lowerDate.includes('month') || lowerDate.includes('mois')) {
+      const months = parseInt(lowerDate.match(/(\d+)/)?.[1] || '1');
+      return new Date(now.getTime() - months * 30 * 24 * 60 * 60 * 1000);
     }
 
     return new Date();
